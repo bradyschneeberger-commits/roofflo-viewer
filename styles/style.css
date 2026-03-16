@@ -1,0 +1,278 @@
+* {
+	box-sizing: border-box;
+}
+
+html,
+body {
+	margin: 0;
+	width: 100%;
+	height: 100%;
+	overflow: hidden;
+	font-family: "Segoe UI", "SF Pro Text", -apple-system, BlinkMacSystemFont, sans-serif;
+	color: #0f172a;
+}
+
+#viewer {
+	position: fixed;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	display: block;
+	z-index: 0;
+}
+
+#control-panel {
+	position: fixed;
+	top: 16px;
+	left: 16px;
+	width: min(320px, calc(100vw - 32px));
+	padding: 16px;
+	border-radius: 12px;
+	background: rgba(255, 255, 255, 0.92);
+	border: 1px solid rgba(15, 23, 42, 0.12);
+	box-shadow: 0 10px 24px rgba(15, 23, 42, 0.14);
+	backdrop-filter: blur(3px);
+	z-index: 10;
+}
+
+#control-panel h1 {
+	margin: 0 0 12px;
+	font-size: 18px;
+	font-weight: 700;
+	letter-spacing: 0.2px;
+}
+
+.field-group {
+	margin-bottom: 10px;
+}
+
+.field-group:last-child {
+	margin-bottom: 0;
+}
+
+.control-group {
+	margin-top: 14px;
+}
+
+.field-group label {
+	display: block;
+	margin-bottom: 5px;
+	font-size: 13px;
+	font-weight: 600;
+	color: #334155;
+}
+
+.input-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+input,
+select {
+	width: 100%;
+	height: 36px;
+	padding: 0 10px;
+	border: 1px solid #cbd5e1;
+	border-radius: 8px;
+	background: #ffffff;
+	color: #0f172a;
+	font-size: 14px;
+	outline: none;
+}
+
+input:focus,
+select:focus {
+	border-color: #0284c7;
+	box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.18);
+}
+
+.unit,
+.pitch-divider {
+	min-width: 38px;
+	font-size: 12px;
+	font-weight: 600;
+	text-align: right;
+	color: #475569;
+}
+
+.pitch-row .pitch-divider {
+	min-width: 44px;
+}
+
+#results-panel {
+	position: fixed;
+	right: 16px;
+	top: 16px;
+	width: min(340px, calc(100vw - 32px));
+	padding: 16px;
+	border-radius: 12px;
+	background: rgba(255, 255, 255, 0.94);
+	border: 1px solid rgba(15, 23, 42, 0.12);
+	box-shadow: 0 10px 24px rgba(15, 23, 42, 0.14);
+	backdrop-filter: blur(3px);
+	z-index: 9;
+}
+
+#results-panel h2 {
+	margin: 0 0 12px;
+	font-size: 16px;
+	font-weight: 700;
+	letter-spacing: 0.2px;
+	color: #0f172a;
+}
+
+.results-grid {
+	display: grid;
+	gap: 7px;
+}
+
+.result-row {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 5px 0;
+	border-bottom: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+.result-row:last-child {
+	border-bottom: none;
+}
+
+.result-label {
+	font-size: 13px;
+	font-weight: 600;
+	color: #334155;
+}
+
+.result-value {
+	font-size: 13px;
+	font-weight: 700;
+	color: #0f172a;
+	text-align: right;
+}
+
+.result-row-status {
+	padding-top: 8px;
+	margin-top: 2px;
+}
+
+.result-status {
+	padding: 3px 8px;
+	border-radius: 999px;
+	font-weight: 700;
+	background: #fff7ed;
+	color: #9a3412;
+	border: 1px solid #fed7aa;
+}
+
+.result-status.is-balanced {
+	background: #ecfdf5;
+	border-color: #86efac;
+	color: #166534;
+}
+
+.result-status.is-warning {
+	background: #fff7ed;
+	border-color: #fdba74;
+	color: #9a3412;
+}
+
+.button-grid {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 8px;
+}
+
+.button-grid-sim {
+	grid-template-columns: 1fr 1fr;
+}
+
+.control-btn {
+	height: 36px;
+	border: 1px solid #cbd5e1;
+	border-radius: 8px;
+	background: #f8fafc;
+	color: #0f172a;
+	font-size: 13px;
+	font-weight: 600;
+	cursor: pointer;
+	transition: background-color 0.18s ease, border-color 0.18s ease, transform 0.12s ease;
+}
+
+.control-btn:hover:not(:disabled) {
+	background: #eef2ff;
+	border-color: #94a3b8;
+}
+
+.control-btn:active:not(:disabled) {
+	transform: translateY(1px);
+}
+
+.control-btn:disabled {
+	opacity: 0.55;
+	cursor: not-allowed;
+}
+
+.control-btn.is-active {
+	background: #0ea5e9;
+	border-color: #0284c7;
+	color: #ffffff;
+	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25);
+}
+
+.control-btn-primary {
+	background: #14b8a6;
+	border-color: #0f766e;
+	color: #ffffff;
+}
+
+.control-btn-primary:hover:not(:disabled) {
+	background: #0d9488;
+	border-color: #0f766e;
+}
+
+.control-btn-primary.is-running {
+	background: #0f766e;
+	border-color: #115e59;
+	color: #e6fffb;
+}
+
+.control-btn-danger {
+	background: #fff1f2;
+	border-color: #fda4af;
+	color: #be123c;
+}
+
+.control-btn-danger:hover:not(:disabled) {
+	background: #ffe4e6;
+	border-color: #fb7185;
+}
+
+@media (max-width: 640px) {
+	#control-panel {
+		top: 10px;
+		left: 10px;
+		width: calc(100vw - 20px);
+		padding: 14px;
+	}
+
+	#control-panel h1 {
+		font-size: 16px;
+	}
+
+	#results-panel {
+		position: fixed;
+		top: auto;
+		left: 10px;
+		right: 10px;
+		bottom: 10px;
+		width: auto;
+		padding: 14px;
+	}
+
+	.button-grid {
+		grid-template-columns: 1fr;
+	}
+}

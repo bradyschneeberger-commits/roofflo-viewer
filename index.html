@@ -1,0 +1,161 @@
+<!--
+RoofFlo V2
+File: index.html
+
+Purpose:
+Entry point for the RoofFlo V2 viewer application.
+
+Responsibilities:
+- Define the HTML structure of the app
+- Load the Three.js import map
+- Load the main application module (main.js)
+- Create containers for:
+  • Viewer canvas
+  • Control panel
+  • Results panel
+
+Rules:
+- No application logic should exist here
+- No geometry or airflow logic should exist here
+- Only responsible for layout and module loading
+
+Primary UI Sections:
+1. Control Panel
+   - Vent placement buttons
+   - Simulation controls
+   - User inputs
+
+2. Results Panel
+   - Ventilation calculations
+   - Status information
+
+3. Viewer Canvas
+   - Three.js rendering surface
+
+Loaded Modules:
+- main.js (application controller)
+
+Scaling Rules:
+- Viewer geometry is modeled in feet
+- UI inputs may be entered in feet or inches
+- Conversions handled inside geometry module
+
+Notes:
+This file should remain minimal and only act as the UI container.
+All behavior is implemented in JavaScript modules.
+-->
+<!-- header comment -->
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>RoofFlo V2</title>
+
+<link rel="stylesheet" href="styles/style.css">
+
+<!-- Import Map -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+</head>
+
+<body>
+
+<aside id="control-panel" aria-label="RoofFlo controls">
+  <h1>RoofFlo V2</h1>
+
+  <div class="field-group">
+    <label for="house-width">House Width</label>
+    <div class="input-row">
+      <input id="house-width" type="number" min="1" step="0.1" value="30">
+      <span class="unit">ft</span>
+    </div>
+  </div>
+
+  <div class="field-group">
+    <label for="house-length">House Length</label>
+    <div class="input-row">
+      <input id="house-length" type="number" min="1" step="0.1" value="50">
+      <span class="unit">ft</span>
+    </div>
+  </div>
+
+  <div class="field-group">
+    <label for="roof-pitch-rise">Roof Pitch</label>
+    <div class="input-row pitch-row">
+      <input id="roof-pitch-rise" type="number" min="1" step="0.1" value="6">
+      <span class="pitch-divider">/ 12</span>
+    </div>
+  </div>
+
+  <div class="field-group">
+    <label for="overhang-depth">Overhang Depth</label>
+    <div class="input-row">
+      <input id="overhang-depth" type="number" min="0" step="0.1" value="16">
+      <span class="unit">in</span>
+    </div>
+  </div>
+
+  <div class="field-group">
+    <label for="vent-rule">Ventilation Rule</label>
+    <div class="input-row">
+      <select id="vent-rule">
+        <option value="1/150" selected>1/150</option>
+        <option value="1/300">1/300</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="field-group control-group">
+    <label>Vent Placement</label>
+    <div class="button-grid">
+      <button id="btn-intake-vent" type="button" class="control-btn">Intake Vent</button>
+      <button id="btn-static-vent" type="button" class="control-btn">Static Vent</button>
+      <button id="btn-ridge-vent" type="button" class="control-btn">Ridge Vent</button>
+    </div>
+  </div>
+
+  <div class="field-group control-group">
+    <label>Simulation</label>
+    <div class="button-grid button-grid-sim">
+      <button id="btn-start-simulation" type="button" class="control-btn control-btn-primary">Start Simulation</button>
+      <button id="btn-reset" type="button" class="control-btn control-btn-danger">Reset</button>
+    </div>
+  </div>
+</aside>
+
+<aside id="results-panel" aria-label="Ventilation results">
+  <h2>Results</h2>
+
+  <div class="results-grid">
+    <div class="result-row"><span class="result-label">Attic Area</span><span id="result-attic-area" class="result-value">0.0 sq ft</span></div>
+    <div class="result-row"><span class="result-label">Ventilation Rule</span><span id="result-rule" class="result-value">1/150</span></div>
+    <div class="result-row"><span class="result-label">Required Ventilation</span><span id="result-required-total" class="result-value">0.0 in² NFVA</span></div>
+    <div class="result-row"><span class="result-label">Required Intake</span><span id="result-required-intake" class="result-value">0.0 in² NFVA</span></div>
+    <div class="result-row"><span class="result-label">Required Exhaust</span><span id="result-required-exhaust" class="result-value">0.0 in² NFVA</span></div>
+    <div class="result-row"><span class="result-label">Installed Intake</span><span id="result-installed-intake" class="result-value">0.0 in² NFVA</span></div>
+    <div class="result-row"><span class="result-label">Installed Exhaust</span><span id="result-installed-exhaust" class="result-value">0.0 in² NFVA</span></div>
+    <div class="result-row"><span class="result-label">Intake Difference</span><span id="result-intake-diff" class="result-value">0.0 in² NFVA</span></div>
+    <div class="result-row"><span class="result-label">Exhaust Difference</span><span id="result-exhaust-diff" class="result-value">0.0 in² NFVA</span></div>
+    <div class="result-row result-row-status"><span class="result-label">Status</span><span id="result-status" class="result-value result-status">Under-ventilated</span></div>
+  </div>
+</aside>
+
+<canvas id="viewer"></canvas>
+
+<script type="module" src="main.js"></script>
+
+</body>
+
+</html>
