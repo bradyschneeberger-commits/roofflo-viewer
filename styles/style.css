@@ -369,7 +369,162 @@ select:focus {
 	}
 }
 
-@media (max-width: 768px) {
+@me@media (max-width: 768px) {
+	:root {
+		--panel-gap: 10px;
+		--panel-radius: 14px;
+		--touch-height: 48px;
+
+		/* NEW: separate tab size from height */
+		--panel-tab-size: 36px;
+
+		/* Drawer width */
+		--mobile-drawer-width: min(292px, 78vw);
+	}
+
+	/* ================================
+	   CONTROL PANEL (LEFT DRAWER)
+	================================ */
+	#control-panel {
+		top: max(8px, env(safe-area-inset-top));
+		left: 0;
+		width: var(--mobile-drawer-width);
+
+		display: flex;
+		padding: 0;
+		overflow: hidden;
+
+		/* CLOSED STATE */
+		transform: translateX(calc(-100% + var(--panel-tab-size)));
+
+		transition: transform 0.24s cubic-bezier(0.34, 1.56, 0.64, 1),
+		            box-shadow 0.24s ease;
+
+		z-index: 12;
+		border-radius: 0 14px 14px 0;
+	}
+
+	#control-panel.is-open {
+		transform: translateX(0);
+		box-shadow: 12px 0 32px rgba(15, 23, 42, 0.22);
+	}
+
+	/* ================================
+	   RESULTS PANEL (RIGHT DRAWER)
+	================================ */
+	#results-panel {
+		top: max(8px, env(safe-area-inset-top));
+		right: 0;
+		width: var(--mobile-drawer-width);
+
+		display: flex;
+		padding: 0;
+		overflow: hidden;
+
+		/* CLOSED STATE */
+		transform: translateX(calc(100% - var(--panel-tab-size)));
+
+		transition: transform 0.24s cubic-bezier(0.34, 1.56, 0.64, 1),
+		            box-shadow 0.24s ease;
+
+		z-index: 11;
+		border-radius: 14px 0 0 14px;
+	}
+
+	#results-panel.is-open {
+		transform: translateX(0);
+		box-shadow: -12px 0 32px rgba(15, 23, 42, 0.22);
+	}
+
+	/* ================================
+	   TOGGLE TABS (ARROW ONLY)
+	================================ */
+	.panel-toggle {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	#control-panel .panel-toggle {
+		width: var(--panel-tab-size);
+		flex: 0 0 var(--panel-tab-size);
+
+		border-radius: 0 14px 14px 0;
+
+		background: rgba(255, 255, 255, 0.95);
+		border-right: 1px solid rgba(15, 23, 42, 0.08);
+		box-shadow: 2px 0 8px rgba(15, 23, 42, 0.08);
+	}
+
+	#results-panel .panel-toggle {
+		width: var(--panel-tab-size);
+		flex: 0 0 var(--panel-tab-size);
+
+		border-radius: 14px 0 0 14px;
+
+		background: rgba(255, 255, 255, 0.95);
+		border-left: 1px solid rgba(15, 23, 42, 0.08);
+		box-shadow: -2px 0 8px rgba(15, 23, 42, 0.08);
+	}
+
+	/* Hide labels (arrow-only tabs) */
+	.panel-toggle-label {
+		display: none;
+	}
+
+	/* Arrow rotation */
+	#control-panel.is-open .panel-toggle-icon {
+		transform: rotate(-90deg);
+	}
+
+	#results-panel.is-open .panel-toggle-icon {
+		transform: rotate(90deg);
+	}
+
+	/* ================================
+	   PANEL CONTENT
+	================================ */
+	#control-panel .panel-content,
+	#results-panel .panel-content {
+		flex: 1;
+		overflow-y: auto;
+		-webkit-overflow-scrolling: touch;
+	}
+
+	#control-panel .panel-content {
+		padding: 12px;
+	}
+
+	#results-panel .panel-content {
+		padding: 10px 12px;
+	}
+
+	/* ================================
+	   FORM + BUTTON CLEANUP
+	================================ */
+	.field-group {
+		margin-bottom: 9px;
+	}
+
+	.field-group label,
+	.result-label,
+	.result-value {
+		font-size: 14px;
+	}
+
+	.button-grid {
+		grid-template-columns: repeat(2, 1fr);
+		gap: 10px;
+	}
+
+	.button-grid-sim {
+		grid-template-columns: 1fr 1fr;
+	}
+
+	#start-btn {
+		width: 100%;
+	}
+}@media (max-width: 768px) {
 	:root {
 		--panel-gap: 10px;
 		--panel-radius: 14px;
