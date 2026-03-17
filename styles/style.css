@@ -520,26 +520,26 @@ select:focus {
 		--panel-tab-height: 44px;
 	}
 
+	/* Keep side-drawer layout for small phones, just reduce width */
 	#control-panel {
-		left: max(8px, env(safe-area-inset-left));
-		right: max(8px, env(safe-area-inset-right));
-		bottom: max(6px, env(safe-area-inset-bottom));
-		max-height: min(40dvh, 360px);
+		width: min(240px, 65vw);
+		max-height: 100dvh;
 	}
 
 	#results-panel {
-		right: max(8px, env(safe-area-inset-right));
-		width: min(248px, calc(100vw - 16px - env(safe-area-inset-left) - env(safe-area-inset-right)));
-		max-height: min(22dvh, 156px);
+		width: min(240px, 65vw);
+		max-height: 100dvh;
 	}
 
 	#control-panel .panel-content {
-		max-height: calc(min(40dvh, 360px) - var(--panel-tab-height));
+		width: calc(min(240px, 65vw) - var(--panel-tab-height));
+		max-height: 100dvh;
 		padding: 10px;
 	}
 
 	#results-panel .panel-content {
-		max-height: calc(min(22dvh, 156px) - var(--panel-tab-height));
+		width: calc(min(240px, 65vw) - var(--panel-tab-height));
+		max-height: 100dvh;
 		padding: 8px 10px 6px;
 	}
 
