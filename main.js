@@ -385,6 +385,7 @@ function onStartSimulationClicked() {
 
     if (isMobilePanelMode()) {
         mobileUiState.controlsOpen = true;
+        mobileUiState.resultsOpen = false;
         updatePanelToggleUI();
     }
 }

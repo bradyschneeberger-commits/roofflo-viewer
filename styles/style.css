@@ -375,15 +375,18 @@ select:focus {
 		--panel-radius: 14px;
 		--touch-height: 48px;
 		--panel-tab-height: 46px;
+		--mobile-drawer-width: min(292px, 78vw);
 	}
 
 	#control-panel {
-		top: max(10px, env(safe-area-inset-top));
+		top: max(8px, env(safe-area-inset-top));
 		left: 0;
 		right: auto;
 		bottom: auto;
-		width: min(280px, 72vw);
-		max-height: 100dvh;
+		width: var(--mobile-drawer-width);
+		max-height: calc(100dvh - max(8px, env(safe-area-inset-top)) - max(8px, env(safe-area-inset-bottom)));
+		display: flex;
+		align-items: stretch;
 		padding: 0;
 		overflow: hidden;
 		transform: translateX(calc(-100% + var(--panel-tab-height)));
@@ -403,11 +406,13 @@ select:focus {
 	}
 
 	#results-panel {
-		top: max(10px, env(safe-area-inset-top));
+		top: max(8px, env(safe-area-inset-top));
 		left: auto;
 		right: 0;
-		width: min(280px, 72vw);
-		max-height: 100dvh;
+		width: var(--mobile-drawer-width);
+		max-height: calc(100dvh - max(8px, env(safe-area-inset-top)) - max(8px, env(safe-area-inset-bottom)));
+		display: flex;
+		align-items: stretch;
 		padding: 0;
 		overflow: hidden;
 		transform: translateX(calc(100% - var(--panel-tab-height)));
@@ -434,22 +439,24 @@ select:focus {
 		border-radius: 0 14px 14px 0;
 		flex-direction: column;
 		width: var(--panel-tab-height);
-		min-height: auto;
+		min-height: 100%;
 		padding: 12px 6px;
 		background: linear-gradient(90deg, rgba(255, 255, 255, 0.94) 0%, rgba(248, 250, 252, 0.88) 100%);
 		border-right: 1px solid rgba(15, 23, 42, 0.08);
 		box-shadow: 2px 0 8px rgba(15, 23, 42, 0.08);
+		flex: 0 0 var(--panel-tab-height);
 	}
 
 	#results-panel .panel-toggle {
 		border-radius: 14px 0 0 14px;
 		flex-direction: column;
 		width: var(--panel-tab-height);
-		min-height: auto;
+		min-height: 100%;
 		padding: 12px 6px;
 		background: linear-gradient(90deg, rgba(248, 250, 252, 0.88) 0%, rgba(255, 255, 255, 0.94) 100%);
 		border-left: 1px solid rgba(15, 23, 42, 0.06);
 		box-shadow: -2px 0 8px rgba(15, 23, 42, 0.08);
+		flex: 0 0 var(--panel-tab-height);
 	}
 
 	#control-panel .panel-toggle-label {
@@ -470,19 +477,19 @@ select:focus {
 
 	#control-panel .panel-content,
 	#results-panel .panel-content {
+		flex: 1 1 auto;
+		min-width: 0;
 		overflow-y: auto;
 		-webkit-overflow-scrolling: touch;
 	}
 
 	#control-panel .panel-content {
-		width: calc(min(280px, 72vw) - var(--panel-tab-height));
-		max-height: 100dvh;
+		max-height: calc(100dvh - max(8px, env(safe-area-inset-top)) - max(8px, env(safe-area-inset-bottom)));
 		padding: 12px;
 	}
 
 	#results-panel .panel-content {
-		width: calc(min(280px, 72vw) - var(--panel-tab-height));
-		max-height: 100dvh;
+		max-height: calc(100dvh - max(8px, env(safe-area-inset-top)) - max(8px, env(safe-area-inset-bottom)));
 		padding: 10px 12px 8px;
 	}
 
@@ -518,28 +525,23 @@ select:focus {
 	:root {
 		--touch-height: 50px;
 		--panel-tab-height: 44px;
+		--mobile-drawer-width: min(252px, 70vw);
 	}
 
 	/* Keep side-drawer layout for small phones, just reduce width */
 	#control-panel {
-		width: min(240px, 65vw);
-		max-height: 100dvh;
+		width: var(--mobile-drawer-width);
 	}
 
 	#results-panel {
-		width: min(240px, 65vw);
-		max-height: 100dvh;
+		width: var(--mobile-drawer-width);
 	}
 
 	#control-panel .panel-content {
-		width: calc(min(240px, 65vw) - var(--panel-tab-height));
-		max-height: 100dvh;
 		padding: 10px;
 	}
 
 	#results-panel .panel-content {
-		width: calc(min(240px, 65vw) - var(--panel-tab-height));
-		max-height: 100dvh;
 		padding: 8px 10px 6px;
 	}
 
