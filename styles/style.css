@@ -9,6 +9,7 @@
 	--panel-border: 1px solid rgba(15, 23, 42, 0.12);
 	--panel-shadow: 0 10px 24px rgba(15, 23, 42, 0.14);
 	--touch-height: 44px;
+	--panel-tab-height: 48px;
 }
 
 html,
@@ -45,6 +46,42 @@ body {
 	box-shadow: var(--panel-shadow);
 	backdrop-filter: blur(var(--panel-blur));
 	z-index: 10;
+}
+
+.panel-toggle {
+	display: none;
+	align-items: center;
+	justify-content: space-between;
+	width: 100%;
+	min-height: var(--panel-tab-height);
+	padding: 0 14px;
+	border: 0;
+	border-radius: inherit;
+	background: transparent;
+	color: #0f172a;
+	font-size: 14px;
+	font-weight: 800;
+	letter-spacing: 0.02em;
+	cursor: pointer;
+	text-align: left;
+}
+
+.panel-toggle-label {
+	pointer-events: none;
+}
+
+.panel-toggle-icon {
+	width: 10px;
+	height: 10px;
+	border-right: 2px solid currentColor;
+	border-bottom: 2px solid currentColor;
+	transform: rotate(45deg);
+	transition: transform 0.18s ease;
+	flex: 0 0 auto;
+}
+
+.panel-content {
+	overflow: visible;
 }
 
 #control-panel h1 {
@@ -300,11 +337,15 @@ select:focus {
   min-height: var(--touch-height);
   padding: 12px 24px;
   font-size: 16px;
-  font-weight: 700;
-  background: #3b82f6;
+	font-weight: 800;
+	color: #ffffff;
+	text-align: center;
+	background: linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%);
   border: none;
   border-radius: 8px;
   cursor: pointer;
+	box-shadow: 0 10px 20px rgba(29, 78, 216, 0.28);
+	text-shadow: 0 1px 0 rgba(15, 23, 42, 0.22);
 }
 
 @media (max-width: 1024px) {
@@ -333,6 +374,7 @@ select:focus {
 		--panel-gap: 10px;
 		--panel-radius: 14px;
 		--touch-height: 48px;
+		--panel-tab-height: 46px;
 	}
 
 	#control-panel {
@@ -341,14 +383,85 @@ select:focus {
 		right: max(10px, env(safe-area-inset-right));
 		bottom: max(10px, env(safe-area-inset-bottom));
 		width: auto;
-		max-height: min(52dvh, 500px);
-		padding: 14px;
+		max-height: min(48dvh, 420px);
+		padding: 0;
+		overflow: hidden;
+		transform: translateY(calc(100% - var(--panel-tab-height)));
+		transition: transform 0.22s ease, box-shadow 0.22s ease;
 		z-index: 12;
+	}
+
+	#control-panel.is-open {
+		transform: translateY(0);
+		box-shadow: 0 -14px 30px rgba(15, 23, 42, 0.2);
 	}
 
 	#control-panel h1 {
 		font-size: 17px;
 		margin-bottom: 10px;
+	}
+
+	#results-panel {
+		top: max(10px, env(safe-area-inset-top));
+		left: auto;
+		right: max(10px, env(safe-area-inset-right));
+		width: min(280px, calc(100vw - 20px - env(safe-area-inset-left) - env(safe-area-inset-right)));
+		max-height: min(28dvh, 210px);
+		padding: 0;
+		overflow: hidden;
+		transform: translateY(calc(-100% + var(--panel-tab-height)));
+		transition: transform 0.22s ease, box-shadow 0.22s ease;
+		z-index: 11;
+	}
+
+	#results-panel.is-open {
+		transform: translateY(0);
+		box-shadow: 0 16px 26px rgba(15, 23, 42, 0.18);
+	}
+
+	#results-panel h2 {
+		font-size: 14px;
+		margin-bottom: 8px;
+	}
+
+	.panel-toggle {
+		display: flex;
+	}
+
+	#control-panel .panel-toggle {
+		border-radius: 14px 14px 0 0;
+		background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(240, 249, 255, 0.92) 100%);
+		border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+	}
+
+	#results-panel .panel-toggle {
+		border-radius: 0 0 14px 14px;
+		background: linear-gradient(180deg, rgba(248, 250, 252, 0.98) 0%, rgba(241, 245, 249, 0.94) 100%);
+		border-top: 1px solid rgba(15, 23, 42, 0.06);
+	}
+
+	#control-panel.is-open .panel-toggle-icon {
+		transform: rotate(225deg);
+	}
+
+	#results-panel.is-open .panel-toggle-icon {
+		transform: rotate(-135deg);
+	}
+
+	#control-panel .panel-content,
+	#results-panel .panel-content {
+		overflow-y: auto;
+		-webkit-overflow-scrolling: touch;
+	}
+
+	#control-panel .panel-content {
+		max-height: calc(min(48dvh, 420px) - var(--panel-tab-height));
+		padding: 12px;
+	}
+
+	#results-panel .panel-content {
+		max-height: calc(min(28dvh, 210px) - var(--panel-tab-height));
+		padding: 10px 12px 8px;
 	}
 
 	.field-group {
@@ -361,23 +474,8 @@ select:focus {
 		font-size: 14px;
 	}
 
-	#results-panel {
-		top: max(10px, env(safe-area-inset-top));
-		left: max(10px, env(safe-area-inset-left));
-		right: max(10px, env(safe-area-inset-right));
-		width: auto;
-		max-height: min(34dvh, 280px);
-		padding: 12px;
-		z-index: 11;
-	}
-
-	#results-panel h2 {
-		font-size: 15px;
-		margin-bottom: 10px;
-	}
-
 	.result-row {
-		padding: 6px 0;
+		padding: 4px 0;
 	}
 
 	.button-grid {
@@ -397,16 +495,53 @@ select:focus {
 @media (max-width: 480px) {
 	:root {
 		--touch-height: 50px;
+		--panel-tab-height: 44px;
 	}
 
 	#control-panel {
-		padding: 12px;
-		max-height: min(58dvh, 560px);
+		left: max(8px, env(safe-area-inset-left));
+		right: max(8px, env(safe-area-inset-right));
+		bottom: max(6px, env(safe-area-inset-bottom));
+		max-height: min(40dvh, 360px);
 	}
 
 	#results-panel {
+		right: max(8px, env(safe-area-inset-right));
+		width: min(248px, calc(100vw - 16px - env(safe-area-inset-left) - env(safe-area-inset-right)));
+		max-height: min(22dvh, 156px);
+	}
+
+	#control-panel .panel-content {
+		max-height: calc(min(40dvh, 360px) - var(--panel-tab-height));
 		padding: 10px;
-		max-height: min(32dvh, 250px);
+	}
+
+	#results-panel .panel-content {
+		max-height: calc(min(22dvh, 156px) - var(--panel-tab-height));
+		padding: 8px 10px 6px;
+	}
+
+	#results-panel h2 {
+		font-size: 12px;
+		margin-bottom: 5px;
+	}
+
+	.results-grid {
+		gap: 3px;
+	}
+
+	.result-row {
+		gap: 6px;
+		padding: 2px 0;
+	}
+
+	.result-label,
+	.result-value {
+		font-size: 11px;
+	}
+
+	.result-status {
+		padding: 2px 7px;
 	}
 
 	.input-row {
@@ -432,5 +567,10 @@ select:focus {
 
 	.launch-content p {
 		font-size: 14px;
+	}
+
+	#start-btn {
+		width: 100%;
+		padding: 13px 18px;
 	}
 }

@@ -87,6 +87,10 @@ const staticVentButton = document.getElementById("btn-static-vent");
 const ridgeVentButton = document.getElementById("btn-ridge-vent");
 const startSimulationButton = document.getElementById("btn-start-simulation");
 const resetButton = document.getElementById("btn-reset");
+const controlPanel = document.getElementById("control-panel");
+const resultsPanel = document.getElementById("results-panel");
+const controlsToggleButton = document.getElementById("controls-toggle");
+const resultsToggleButton = document.getElementById("results-toggle");
 const resultAtticArea = document.getElementById("result-attic-area");
 const resultRule = document.getElementById("result-rule");
 const resultRequiredTotal = document.getElementById("result-required-total");
@@ -106,6 +110,10 @@ const placementButtons = [
 
 let simulationState = SimulationState.IDLE;
 let activePlacementMode = PlacementMode.NONE;
+let mobileUiState = {
+    controlsOpen: false,
+    resultsOpen: false
+};
 
 // Store selected ventilation rule for future calculations.
 let selectedVentilationRule = ventRuleSelect?.value || "1/150";
@@ -132,6 +140,55 @@ function updateSimulationButtonUI() {
     startSimulationButton.disabled = running;
     startSimulationButton.textContent = running ? "Simulation Running" : "Start Simulation";
     startSimulationButton.classList.toggle("is-running", running);
+}
+
+function isMobilePanelMode() {
+    return window.matchMedia("(max-width: 768px)").matches;
+}
+
+function updatePanelToggleUI() {
+    if (!controlPanel || !resultsPanel || !controlsToggleButton || !resultsToggleButton) {
+        return;
+    }
+
+    const mobileMode = isMobilePanelMode();
+    const controlsOpen = mobileMode ? mobileUiState.controlsOpen : true;
+    const resultsOpen = mobileMode ? mobileUiState.resultsOpen : true;
+
+    controlPanel.classList.toggle("is-open", controlsOpen);
+    resultsPanel.classList.toggle("is-open", resultsOpen);
+
+    controlsToggleButton.setAttribute("aria-expanded", controlsOpen ? "true" : "false");
+    resultsToggleButton.setAttribute("aria-expanded", resultsOpen ? "true" : "false");
+}
+
+function toggleControlsPanel() {
+    if (!isMobilePanelMode()) {
+        return;
+    }
+
+    mobileUiState.controlsOpen = !mobileUiState.controlsOpen;
+    updatePanelToggleUI();
+}
+
+function toggleResultsPanel() {
+    if (!isMobilePanelMode()) {
+        return;
+    }
+
+    mobileUiState.resultsOpen = !mobileUiState.resultsOpen;
+    updatePanelToggleUI();
+}
+
+function syncResponsiveUiState() {
+    if (!isMobilePanelMode()) {
+        mobileUiState = {
+            controlsOpen: false,
+            resultsOpen: false
+        };
+    }
+
+    updatePanelToggleUI();
 }
 
 function formatIn2(value) {
@@ -353,10 +410,14 @@ staticVentButton?.addEventListener("click", () => setPlacementMode(PlacementMode
 ridgeVentButton?.addEventListener("click", () => setPlacementMode(PlacementMode.RIDGE));
 startSimulationButton?.addEventListener("click", onStartSimulationClicked);
 resetButton?.addEventListener("click", onResetClicked);
+controlsToggleButton?.addEventListener("click", toggleControlsPanel);
+resultsToggleButton?.addEventListener("click", toggleResultsPanel);
 renderer.domElement.addEventListener("pointerdown", onViewerClicked);
+window.addEventListener("resize", syncResponsiveUiState);
 
 updateSimulationButtonUI();
 updatePlacementButtonUI();
+syncResponsiveUiState();
 
 let lastAnimationTime = performance.now();
 

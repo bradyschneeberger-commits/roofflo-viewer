@@ -27,6 +27,12 @@
   </div>
 
   <aside id="control-panel" aria-label="RoofFlo controls">
+    <button id="controls-toggle" class="panel-toggle panel-toggle-controls" type="button" aria-expanded="false" aria-controls="control-panel-content">
+      <span class="panel-toggle-label">Controls</span>
+      <span class="panel-toggle-icon" aria-hidden="true"></span>
+    </button>
+
+    <div id="control-panel-content" class="panel-content">
     <h1>RoofFlo V2</h1>
 
     <div class="field-group">
@@ -87,9 +93,16 @@
         <button id="btn-reset" type="button" class="control-btn control-btn-danger">Reset</button>
       </div>
     </div>
+    </div>
   </aside>
 
   <aside id="results-panel" aria-label="Ventilation results">
+    <button id="results-toggle" class="panel-toggle panel-toggle-results" type="button" aria-expanded="false" aria-controls="results-panel-content">
+      <span class="panel-toggle-label">Results</span>
+      <span class="panel-toggle-icon" aria-hidden="true"></span>
+    </button>
+
+    <div id="results-panel-content" class="panel-content">
     <h2>Results</h2>
 
     <div class="results-grid">
@@ -142,6 +155,7 @@
         <span class="result-label">Status</span>
         <span id="result-status" class="result-value result-status">Under-ventilated</span>
       </div>
+    </div>
     </div>
   </aside>
 
