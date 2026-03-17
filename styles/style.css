@@ -389,7 +389,7 @@ select:focus {
 		align-items: stretch;
 		padding: 0;
 		overflow: hidden;
-		transform: translateX(calc(-100% + var(--panel-tab-height)));
+		transform: translateX(calc(100% - var(--panel-tab-size)));
 		transition: transform 0.24s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.24s ease;
 		z-index: 12;
 		border-radius: 0 14px 14px 0;
@@ -415,7 +415,7 @@ select:focus {
 		align-items: stretch;
 		padding: 0;
 		overflow: hidden;
-		transform: translateX(calc(100% - var(--panel-tab-height)));
+		transform: translateX(calc(-100% + var(--panel-tab-size)));
 		transition: transform 0.24s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.24s ease;
 		z-index: 11;
 		border-radius: 14px 0 0 14px;
@@ -438,25 +438,25 @@ select:focus {
 	#control-panel .panel-toggle {
 		border-radius: 0 14px 14px 0;
 		flex-direction: column;
-		width: var(--panel-tab-height);
+		width: var(--panel-tab-size);
 		min-height: 100%;
 		padding: 12px 6px;
 		background: linear-gradient(90deg, rgba(255, 255, 255, 0.94) 0%, rgba(248, 250, 252, 0.88) 100%);
 		border-right: 1px solid rgba(15, 23, 42, 0.08);
 		box-shadow: 2px 0 8px rgba(15, 23, 42, 0.08);
-		flex: 0 0 var(--panel-tab-height);
+		flex: 0 0 var(--panel-tab-size);
 	}
 
 	#results-panel .panel-toggle {
 		border-radius: 14px 0 0 14px;
 		flex-direction: column;
-		width: var(--panel-tab-height);
+		width: var(--panel-tab-size);
 		min-height: 100%;
 		padding: 12px 6px;
 		background: linear-gradient(90deg, rgba(248, 250, 252, 0.88) 0%, rgba(255, 255, 255, 0.94) 100%);
 		border-left: 1px solid rgba(15, 23, 42, 0.06);
 		box-shadow: -2px 0 8px rgba(15, 23, 42, 0.08);
-		flex: 0 0 var(--panel-tab-height);
+		flex: 0 0 var(--panel-tab-size);
 	}
 
 	#control-panel .panel-toggle-label {
@@ -526,6 +526,7 @@ select:focus {
 		--touch-height: 50px;
 		--panel-tab-height: 44px;
 		--mobile-drawer-width: min(252px, 70vw);
+		--panel-tab-size: 38px;
 	}
 
 	/* Keep side-drawer layout for small phones, just reduce width */

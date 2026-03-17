@@ -1,43 +1,4 @@
-/*
-RoofFlo V2
-File: main.js
 
-Purpose:
-Application controller that connects all modules.
-
-Responsibilities:
-- Initialize scene
-- Create geometry
-- Handle UI inputs
-- Manage simulation state
-- Run animation loop
-
-Rules:
-- Do not contain geometry logic
-- Do not contain vent logic
-- Do not contain airflow logic
-- Only orchestrate modules
-
-Simulation States:
-IDLE
-RUNNING
-RESET
-*/
-/*
-Dependencies:
-- modules/scene.js
-- modules/geometry.js
-- modules/vents.js
-- modules/airflow.js
-- modules/calculations.js
-*/
-/*
-State ownership:
-- main.js owns app-level UI state and simulation state
-- other modules should expose functions and data, not own the whole app state
-*/
-
-// Import scene components
 import { scene, camera, renderer, controls } from "./modules/scene.js";
 import { createAtticGeometry, getGeometryState } from "./modules/geometry.js";
 import {
@@ -439,8 +400,20 @@ function animate(now = performance.now()) {
 
 animate();
 
-document.getElementById("start-btn").onclick = () => {
-  document.getElementById("launch-screen").style.display = "none";
+const launchStartButton = document.getElementById("start-btn");
+const launchScreen = document.getElementById("launch-screen");
+
+if (launchStartButton && launchScreen) {
+    launchStartButton.addEventListener("click", () => {
+        launchScreen.style.display = "none";
+
+        if (isMobilePanelMode()) {
+            mobileUiState.controlsOpen = true;
+            mobileUiState.resultsOpen = false;
+            updatePanelToggleUI();
+        }
+    });
+
 };
 
 
