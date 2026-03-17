@@ -382,6 +382,11 @@ function onStartSimulationClicked() {
     cancelPendingRidgePlacement();
     updateSimulationButtonUI();
     updatePlacementButtonUI();
+
+    if (isMobilePanelMode()) {
+        mobileUiState.controlsOpen = true;
+        updatePanelToggleUI();
+    }
 }
 
 function onResetClicked() {

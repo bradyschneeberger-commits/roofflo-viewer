@@ -34,7 +34,7 @@ import { getGeometryState } from "./geometry.js";
 
 const INTAKE_COLOR = 0x7dfbff;
 const STATIC_COLOR = 0xff6a3d;
-const RIDGE_COLOR = 0xffe347;
+const RIDGE_COLOR = 0xff1744;
 
 const INTAKE_NFVA_IN2 = 50;
 const STATIC_NFVA_IN2 = 50;
