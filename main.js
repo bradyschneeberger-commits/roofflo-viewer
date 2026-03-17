@@ -1,4 +1,3 @@
-
 import { scene, camera, renderer, controls } from "./modules/scene.js";
 import { createAtticGeometry, getGeometryState } from "./modules/geometry.js";
 import {
@@ -123,13 +122,47 @@ function updatePanelToggleUI() {
     resultsToggleButton.setAttribute("aria-expanded", resultsOpen ? "true" : "false");
 }
 
+function openControlsPanel() {
+    if (!isMobilePanelMode()) {
+        return;
+    }
+
+    mobileUiState.controlsOpen = true;
+    mobileUiState.resultsOpen = false;
+    updatePanelToggleUI();
+}
+
+function openResultsPanel() {
+    if (!isMobilePanelMode()) {
+        return;
+    }
+
+    mobileUiState.controlsOpen = false;
+    mobileUiState.resultsOpen = true;
+    updatePanelToggleUI();
+}
+
+function closeAllPanels() {
+    if (!isMobilePanelMode()) {
+        return;
+    }
+
+    mobileUiState.controlsOpen = false;
+    mobileUiState.resultsOpen = false;
+    updatePanelToggleUI();
+}
+
 function toggleControlsPanel() {
     if (!isMobilePanelMode()) {
         return;
     }
 
-    mobileUiState.controlsOpen = !mobileUiState.controlsOpen;
-    updatePanelToggleUI();
+    if (mobileUiState.controlsOpen) {
+        closeAllPanels();
+        return;
+    }
+
+    openControlsPanel();
 }
 
 function toggleResultsPanel() {
@@ -137,16 +170,23 @@ function toggleResultsPanel() {
         return;
     }
 
-    mobileUiState.resultsOpen = !mobileUiState.resultsOpen;
-    updatePanelToggleUI();
+    if (mobileUiState.resultsOpen) {
+        closeAllPanels();
+        return;
+    }
+
+    openResultsPanel();
 }
 
 function syncResponsiveUiState() {
-    if (!isMobilePanelMode()) {
-        mobileUiState = {
-            controlsOpen: false,
-            resultsOpen: false
-        };
+    if (isMobilePanelMode()) {
+        if (!mobileUiState.controlsOpen && !mobileUiState.resultsOpen) {
+            mobileUiState.controlsOpen = true;
+            mobileUiState.resultsOpen = false;
+        }
+    } else {
+        mobileUiState.controlsOpen = false;
+        mobileUiState.resultsOpen = false;
     }
 
     updatePanelToggleUI();
@@ -300,6 +340,7 @@ function onViewerClicked(event) {
     }
 
     const pointerNdc = getPointerNdc(event);
+
     if (activePlacementMode === PlacementMode.INTAKE) {
         const placed = tryPlaceIntakeVent(camera, pointerNdc);
         if (placed) {
@@ -334,6 +375,7 @@ function onStartSimulationClicked() {
         getGeometryState,
         getVents: getAirflowVentState
     });
+
     if (!started) {
         return;
     }
@@ -345,9 +387,7 @@ function onStartSimulationClicked() {
     updatePlacementButtonUI();
 
     if (isMobilePanelMode()) {
-        mobileUiState.controlsOpen = true;
-        mobileUiState.resultsOpen = false;
-        updatePanelToggleUI();
+        openResultsPanel();
     }
 }
 
@@ -361,6 +401,10 @@ function onResetClicked() {
     updateSimulationButtonUI();
     updatePlacementButtonUI();
     updateResults();
+
+    if (isMobilePanelMode()) {
+        openControlsPanel();
+    }
 }
 
 // Build default geometry on load.
@@ -408,14 +452,9 @@ if (launchStartButton && launchScreen) {
         launchScreen.style.display = "none";
 
         if (isMobilePanelMode()) {
-            mobileUiState.controlsOpen = true;
-            mobileUiState.resultsOpen = false;
-            updatePanelToggleUI();
+            openControlsPanel();
         }
     });
-
-};
-
+}
 
 export { selectedVentilationRule };
-
