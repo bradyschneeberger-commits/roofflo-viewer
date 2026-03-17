@@ -53,6 +53,8 @@ let leftIntakePlacement = null;
 let rightIntakePlacement = null;
 let leftExhaustZone = null;
 let rightExhaustZone = null;
+let leftStaticPlacementLine = null;
+let rightStaticPlacementLine = null;
 let ridgeCenterLine = null;
 let atticHeight = 0;
 
@@ -284,7 +286,7 @@ function createAtticGeometry({
     const exhaustZoneMaterial = new THREE.MeshBasicMaterial({
         color: 0xff5a36,
         transparent: true,
-        opacity: 0.28,
+        opacity: 0.2,
         side: THREE.DoubleSide,
         depthWrite: false
     });
@@ -296,6 +298,37 @@ function createAtticGeometry({
     rightExhaustZone = new THREE.Mesh(createExhaustZoneGeometry(1), exhaustZoneMaterial.clone());
     rightExhaustZone.name = "rightExhaustZone";
     atticSystem.add(rightExhaustZone);
+
+    // --------------------------------------------------
+    // 5.5 Static vent placement lines (centered in 3-foot zones)
+    // --------------------------------------------------
+    // Placement lines are centered at 1.5 feet downslope from ridge
+    const staticPlacementDownslopeDepth = 1.5;
+    const staticPlacementDx = Math.cos(roofSlopeAngle) * staticPlacementDownslopeDepth;
+    const staticPlacementDy = Math.sin(roofSlopeAngle) * staticPlacementDownslopeDepth;
+
+    const leftStaticPlacementPoints = [
+        new THREE.Vector3(-staticPlacementDx, atticHeight - staticPlacementDy, -buildingLength / 2),
+        new THREE.Vector3(-staticPlacementDx, atticHeight - staticPlacementDy, buildingLength / 2)
+    ];
+    const rightStaticPlacementPoints = [
+        new THREE.Vector3(staticPlacementDx, atticHeight - staticPlacementDy, -buildingLength / 2),
+        new THREE.Vector3(staticPlacementDx, atticHeight - staticPlacementDy, buildingLength / 2)
+    ];
+
+    leftStaticPlacementLine = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints(leftStaticPlacementPoints),
+        new THREE.LineBasicMaterial({ color: 0xff8c42, linewidth: 2 })
+    );
+    leftStaticPlacementLine.name = "leftStaticPlacementLine";
+    atticSystem.add(leftStaticPlacementLine);
+
+    rightStaticPlacementLine = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints(rightStaticPlacementPoints),
+        new THREE.LineBasicMaterial({ color: 0xff8c42, linewidth: 2 })
+    );
+    rightStaticPlacementLine.name = "rightStaticPlacementLine";
+    atticSystem.add(rightStaticPlacementLine);
 
     // --------------------------------------------------
     // 6. Ridge centerline reference
@@ -321,6 +354,8 @@ function createAtticGeometry({
         rightIntakePlacement,
         leftExhaustZone,
         rightExhaustZone,
+        leftStaticPlacementLine,
+        rightStaticPlacementLine,
         ridgeCenterLine,
         atticHeight,
         roofHeightAtBuildingEdge,
@@ -339,6 +374,8 @@ function getGeometryState() {
         rightIntakePlacement,
         leftExhaustZone,
         rightExhaustZone,
+        leftStaticPlacementLine,
+        rightStaticPlacementLine,
         ridgeCenterLine,
         atticHeight,
         currentGeometryParams
@@ -357,6 +394,8 @@ export {
     rightIntakePlacement,
     leftExhaustZone,
     rightExhaustZone,
+    leftStaticPlacementLine,
+    rightStaticPlacementLine,
     ridgeCenterLine,
     atticHeight
 };

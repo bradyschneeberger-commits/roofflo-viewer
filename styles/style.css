@@ -53,6 +53,11 @@ body {
 	height: 100%;
 	display: block;
 	z-index: 0;
+	cursor: default;
+}
+
+#viewer.placement-active {
+	cursor: pointer;
 }
 
 #control-panel,

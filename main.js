@@ -9,7 +9,11 @@ import {
     getVentSummary,
     getPlacedIntakeVents,
     getPlacedStaticVents,
-    getPlacedRidgeVents
+    getPlacedRidgeVents,
+    initializeVentPreview,
+    updateVentPreview,
+    hideVentPreview,
+    clearVentPreview
 } from "./modules/vents.js";
 import {
     calculateRequiredVentilation,
@@ -279,6 +283,7 @@ function rebuildGeometryFromInputs() {
     }
 
     clearAllVents();
+    clearVentPreview();
 
     const buildingWidth = Math.max(1, toNumber(houseWidthInput?.value, 30));
     const buildingLength = Math.max(1, toNumber(houseLengthInput?.value, 50));
@@ -292,6 +297,8 @@ function rebuildGeometryFromInputs() {
         pitchRise,
         overhangDepth
     });
+
+    initializeVentPreview();
 }
 
 function onGeometryInputChanged() {
@@ -315,6 +322,11 @@ function updatePlacementButtonUI() {
         item.button.setAttribute("aria-pressed", isActive ? "true" : "false");
         item.button.disabled = simulationState === SimulationState.RUNNING;
     }
+
+    // Update viewer cursor based on placement mode
+    const viewer = renderer.domElement;
+    const isPlacementActive = activePlacementMode !== PlacementMode.NONE && simulationState !== SimulationState.RUNNING;
+    viewer.classList.toggle("placement-active", isPlacementActive);
 }
 
 function setPlacementMode(mode) {
@@ -339,30 +351,33 @@ function onViewerClicked(event) {
         return;
     }
 
-    const pointerNdc = getPointerNdc(event);
+    let placed = false;
 
     if (activePlacementMode === PlacementMode.INTAKE) {
-        const placed = tryPlaceIntakeVent(camera, pointerNdc);
-        if (placed) {
-            updateResults();
-        }
+        placed = tryPlaceIntakeVent();
+    } else if (activePlacementMode === PlacementMode.STATIC) {
+        placed = tryPlaceStaticVent();
+    } else if (activePlacementMode === PlacementMode.RIDGE) {
+        placed = tryPlaceRidgeVent();
+    }
+
+    if (placed) {
+        updateResults();
+    }
+}
+
+function onViewerPointerMove(event) {
+    if (simulationState === SimulationState.RUNNING || activePlacementMode === PlacementMode.NONE) {
+        hideVentPreview();
         return;
     }
 
-    if (activePlacementMode === PlacementMode.STATIC) {
-        const placed = tryPlaceStaticVent(camera, pointerNdc);
-        if (placed) {
-            updateResults();
-        }
-        return;
-    }
+    const pointerNdc = getPointerNdc(event);
+    updateVentPreview(pointerNdc, camera, activePlacementMode);
+}
 
-    if (activePlacementMode === PlacementMode.RIDGE) {
-        const placed = tryPlaceRidgeVent(camera, pointerNdc);
-        if (placed) {
-            updateResults();
-        }
-    }
+function onViewerPointerLeave(event) {
+    hideVentPreview();
 }
 
 function onStartSimulationClicked() {
@@ -383,6 +398,7 @@ function onStartSimulationClicked() {
     simulationState = SimulationState.RUNNING;
     activePlacementMode = PlacementMode.NONE;
     cancelPendingRidgePlacement();
+    hideVentPreview();
     updateSimulationButtonUI();
     updatePlacementButtonUI();
 
@@ -395,6 +411,7 @@ function onResetClicked() {
     simulationState = SimulationState.RESET;
     resetAirflowSimulation();
     clearAllVents();
+    hideVentPreview();
     activePlacementMode = PlacementMode.NONE;
 
     simulationState = SimulationState.IDLE;
@@ -424,6 +441,8 @@ resetButton?.addEventListener("click", onResetClicked);
 controlsToggleButton?.addEventListener("click", toggleControlsPanel);
 resultsToggleButton?.addEventListener("click", toggleResultsPanel);
 renderer.domElement.addEventListener("pointerdown", onViewerClicked);
+renderer.domElement.addEventListener("pointermove", onViewerPointerMove);
+renderer.domElement.addEventListener("pointerleave", onViewerPointerLeave);
 window.addEventListener("resize", syncResponsiveUiState);
 
 updateSimulationButtonUI();
