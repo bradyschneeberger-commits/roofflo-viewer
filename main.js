@@ -372,5 +372,10 @@ function animate(now = performance.now()) {
 
 animate();
 
+document.getElementById("start-btn").onclick = () => {
+  document.getElementById("launch-screen").style.display = "none";
+};
+
+
 export { selectedVentilationRule };
 
