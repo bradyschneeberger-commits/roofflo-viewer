@@ -170,6 +170,7 @@ function hideVentPreview() {
 	if (ghostRidgeMesh) ghostRidgeMesh.visible = false;
 
 	currentPreviewMode = null;
+	resetPreviewState();
 }
 
 function clearVentPreview() {
@@ -495,6 +496,10 @@ function cancelPendingRidgePlacement() {
 }
 
 function tryPlaceIntakeVent() {
+	if (!currentPreviewIsValid || currentPreviewMode !== "intake") {
+		return false;
+	}
+
 	if (!intakePreviewSnappedPoint || !intakePreviewPlacementLine) {
 		return false;
 	}
@@ -533,6 +538,10 @@ function tryPlaceIntakeVent() {
 }
 
 function tryPlaceStaticVent() {
+	if (!currentPreviewIsValid || currentPreviewMode !== "static") {
+		return false;
+	}
+
 	if (!staticPreviewSnappedPoint || !staticPreviewNormal || !staticPreviewPlacementLine) {
 		return false;
 	}
@@ -592,17 +601,30 @@ function getSnappedPointOnRidge(hitPoint, ridgeLine) {
 	return new THREE.Vector3(start.x, start.y, z);
 }
 
-function isDuplicateIntakeVent(position, tolerance = 0.15) {
+function isDuplicateIntakeVent(position) {
+	const minCenterSpacing = INTAKE_LENGTH_FEET * 0.9;
+
 	return intakeVents.some((vent) => {
-		const dist = vent.position.distanceTo(position);
-		return dist < tolerance;
+		const sameSide =
+			intakePreviewPlacementLine &&
+			((intakePreviewPlacementLine.name === "leftIntakePlacement" && vent.side === "left") ||
+			 (intakePreviewPlacementLine.name === "rightIntakePlacement" && vent.side === "right"));
+
+		if (!sameSide) {
+			return false;
+		}
+
+		const zDistance = Math.abs(vent.position.z - position.z);
+		return zDistance < minCenterSpacing;
 	});
 }
 
-function isDuplicateStaticVent(position, tolerance = 0.5) {
+function isDuplicateStaticVent(position) {
+	const minCenterSpacing = STATIC_SIZE_FEET * 0.9;
+
 	return staticVents.some((vent) => {
-		const dist = vent.position.distanceTo(position);
-		return dist < tolerance;
+		const distance = vent.position.distanceTo(position);
+		return distance < minCenterSpacing;
 	});
 }
 
@@ -671,6 +693,10 @@ function createRidgeVentGeometry(startPoint, endPoint) {
 }
 
 function tryPlaceRidgeVent() {
+	if (!currentPreviewIsValid || currentPreviewMode !== "ridge") {
+		return false;
+	}
+
 	if (!ridgePreviewSnappedPoint) {
 		return false;
 	}
