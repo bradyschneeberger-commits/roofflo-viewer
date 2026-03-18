@@ -25,6 +25,7 @@ import {
     formatVentilationValue
 } from "./modules/calculations.js";
 import {
+    initializeAirflowVisualization,
     startAirflowSimulation,
     resetAirflowSimulation,
     updateAirflow,
@@ -285,6 +286,9 @@ function rebuildGeometryFromInputs() {
         updatePlacementButtonUI();
     }
 
+    // Rebuild should also refresh always-visible trapped air visualization.
+    resetAirflowSimulation();
+
     clearAllVents();
     clearVentPreview();
 
@@ -299,6 +303,12 @@ function rebuildGeometryFromInputs() {
         buildingLength,
         pitchRise,
         overhangDepth
+    });
+
+    initializeAirflowVisualization({
+        scene,
+        getGeometryState,
+        getVents: getAirflowVentState
     });
 
     initializeVentPreview();
