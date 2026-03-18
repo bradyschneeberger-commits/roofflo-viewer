@@ -350,6 +350,13 @@ function onViewerClicked(event) {
         return;
     }
 
+    const pointerNdc = getPointerNdc(event);
+
+    // IMPORTANT:
+    // Refresh preview/snapped placement state on tap/click before placing.
+    // Desktop already gets this from pointermove, but mobile often does not.
+    updateVentPreview(pointerNdc, camera, activePlacementMode);
+
     let placed = false;
 
     if (activePlacementMode === PlacementMode.INTAKE) {

@@ -170,7 +170,6 @@ function hideVentPreview() {
 	if (ghostRidgeMesh) ghostRidgeMesh.visible = false;
 
 	currentPreviewMode = null;
-	resetPreviewState();
 }
 
 function clearVentPreview() {
