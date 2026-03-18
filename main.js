@@ -16,9 +16,13 @@ import {
     clearVentPreview
 } from "./modules/vents.js";
 import {
+    calculateAtticArea,
     calculateRequiredVentilation,
+    calculateRequiredIntake,
+    calculateRequiredExhaust,
     calculateInstalledVentilation,
-    calculateVentilationStatus
+    calculateVentilationStatus,
+    formatVentilationValue
 } from "./modules/calculations.js";
 import {
     startAirflowSimulation,
@@ -196,10 +200,6 @@ function syncResponsiveUiState() {
     updatePanelToggleUI();
 }
 
-function formatIn2(value) {
-    return `${value.toFixed(1)} in² NFVA`;
-}
-
 function formatSqFt(value) {
     return `${value.toFixed(1)} sq ft`;
 }
@@ -209,16 +209,15 @@ function formatSignedIn2(value) {
     return `${sign}${value.toFixed(1)} in² NFVA`;
 }
 
-function updateResults() {
+function refreshResultsPanel() {
     const buildingWidth = Math.max(1, toNumber(houseWidthInput?.value, 30));
     const buildingLength = Math.max(1, toNumber(houseLengthInput?.value, 50));
     const ventilationRule = selectedVentilationRule || "1/150";
 
-    const required = calculateRequiredVentilation({
-        buildingWidth,
-        buildingLength,
-        ventilationRule
-    });
+    const atticAreaSqFt = calculateAtticArea(buildingWidth, buildingLength);
+    const requiredVentIn2 = calculateRequiredVentilation(atticAreaSqFt, ventilationRule);
+    const requiredIntakeIn2 = calculateRequiredIntake(requiredVentIn2);
+    const requiredExhaustIn2 = calculateRequiredExhaust(requiredVentIn2);
 
     const ventSummary = getVentSummary();
     const installed = calculateInstalledVentilation({
@@ -227,37 +226,37 @@ function updateResults() {
         ridgeLengthFeet: ventSummary.ridgeLengthFeet
     });
 
-    const intakeDifference = installed.installedIntakeIn2 - required.requiredIntakeIn2;
-    const exhaustDifference = installed.installedExhaustIn2 - required.requiredExhaustIn2;
+    const intakeDifference = installed.installedIntakeIn2 - requiredIntakeIn2;
+    const exhaustDifference = installed.installedExhaustIn2 - requiredExhaustIn2;
 
     const status = calculateVentilationStatus({
-        requiredTotal: required.requiredVentIn2,
-        requiredIntake: required.requiredIntakeIn2,
-        requiredExhaust: required.requiredExhaustIn2,
+        requiredTotal: requiredVentIn2,
+        requiredIntake: requiredIntakeIn2,
+        requiredExhaust: requiredExhaustIn2,
         installedIntake: installed.installedIntakeIn2,
         installedExhaust: installed.installedExhaustIn2
     });
 
     if (resultAtticArea) {
-        resultAtticArea.textContent = formatSqFt(required.atticAreaSqFt);
+        resultAtticArea.textContent = formatSqFt(atticAreaSqFt);
     }
     if (resultRule) {
         resultRule.textContent = ventilationRule;
     }
     if (resultRequiredTotal) {
-        resultRequiredTotal.textContent = formatIn2(required.requiredVentIn2);
+        resultRequiredTotal.textContent = formatVentilationValue(requiredVentIn2);
     }
     if (resultRequiredIntake) {
-        resultRequiredIntake.textContent = formatIn2(required.requiredIntakeIn2);
+        resultRequiredIntake.textContent = formatVentilationValue(requiredIntakeIn2);
     }
     if (resultRequiredExhaust) {
-        resultRequiredExhaust.textContent = formatIn2(required.requiredExhaustIn2);
+        resultRequiredExhaust.textContent = formatVentilationValue(requiredExhaustIn2);
     }
     if (resultInstalledIntake) {
-        resultInstalledIntake.textContent = formatIn2(installed.installedIntakeIn2);
+        resultInstalledIntake.textContent = formatVentilationValue(installed.installedIntakeIn2);
     }
     if (resultInstalledExhaust) {
-        resultInstalledExhaust.textContent = formatIn2(installed.installedExhaustIn2);
+        resultInstalledExhaust.textContent = formatVentilationValue(installed.installedExhaustIn2);
     }
     if (resultIntakeDiff) {
         resultIntakeDiff.textContent = formatSignedIn2(intakeDifference);
@@ -303,12 +302,12 @@ function rebuildGeometryFromInputs() {
 
 function onGeometryInputChanged() {
     rebuildGeometryFromInputs();
-    updateResults();
+    refreshResultsPanel();
 }
 
 function onVentRuleChanged() {
     selectedVentilationRule = ventRuleSelect?.value || "1/150";
-    updateResults();
+    refreshResultsPanel();
 }
 
 function updatePlacementButtonUI() {
@@ -362,7 +361,7 @@ function onViewerClicked(event) {
     }
 
     if (placed) {
-        updateResults();
+        refreshResultsPanel();
     }
 }
 
@@ -417,7 +416,7 @@ function onResetClicked() {
     simulationState = SimulationState.IDLE;
     updateSimulationButtonUI();
     updatePlacementButtonUI();
-    updateResults();
+    refreshResultsPanel();
 
     if (isMobilePanelMode()) {
         openControlsPanel();
@@ -426,7 +425,7 @@ function onResetClicked() {
 
 // Build default geometry on load.
 rebuildGeometryFromInputs();
-updateResults();
+refreshResultsPanel();
 
 houseWidthInput?.addEventListener("input", onGeometryInputChanged);
 houseLengthInput?.addEventListener("input", onGeometryInputChanged);

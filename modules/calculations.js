@@ -27,37 +27,34 @@ Exports:
 calculateVentilation()
 */
 
-const SOFFIT_INTAKE_NFVA_IN2 = 50;
-const STATIC_VENT_NFVA_IN2 = 50;
+const INTAKE_NFVA_PER_VENT_IN2 = 50;
+const STATIC_NFVA_PER_VENT_IN2 = 50;
 const RIDGE_NFVA_PER_LINEAR_FOOT_IN2 = 18;
 
 function getVentRuleDivisor(ventilationRule) {
 	return ventilationRule === "1/300" ? 300 : 150;
 }
 
-function calculateRequiredVentilation({
-	buildingWidth = 0,
-	buildingLength = 0,
-	ventilationRule = "1/150"
-} = {}) {
+function calculateAtticArea(buildingWidth = 0, buildingLength = 0) {
 	const width = Math.max(0, Number(buildingWidth) || 0);
 	const length = Math.max(0, Number(buildingLength) || 0);
-	const atticAreaSqFt = width * length;
+	return width * length;
+}
 
+function calculateRequiredVentilation(atticArea = 0, ventilationRule = "1/150") {
+	const safeAtticArea = Math.max(0, Number(atticArea) || 0);
 	const divisor = getVentRuleDivisor(ventilationRule);
-	const requiredVentSqFt = atticAreaSqFt / divisor;
-	const requiredVentIn2 = requiredVentSqFt * 144;
-	const requiredIntakeIn2 = requiredVentIn2 / 2;
-	const requiredExhaustIn2 = requiredVentIn2 / 2;
+	return (safeAtticArea * 144) / divisor;
+}
 
-	return {
-		atticAreaSqFt,
-		ventilationRule,
-		requiredVentSqFt,
-		requiredVentIn2,
-		requiredIntakeIn2,
-		requiredExhaustIn2
-	};
+function calculateRequiredIntake(requiredVentilationIn2 = 0) {
+	const required = Math.max(0, Number(requiredVentilationIn2) || 0);
+	return required / 2;
+}
+
+function calculateRequiredExhaust(requiredVentilationIn2 = 0) {
+	const required = Math.max(0, Number(requiredVentilationIn2) || 0);
+	return required / 2;
 }
 
 function calculateInstalledVentilation({
@@ -69,9 +66,9 @@ function calculateInstalledVentilation({
 	const staticVentCount = Math.max(0, Number(staticCount) || 0);
 	const totalRidgeLengthFeet = Math.max(0, Number(ridgeLengthFeet) || 0);
 
-	const installedIntakeIn2 = intakeVentCount * SOFFIT_INTAKE_NFVA_IN2;
+	const installedIntakeIn2 = intakeVentCount * INTAKE_NFVA_PER_VENT_IN2;
 	const installedExhaustIn2 =
-		(staticVentCount * STATIC_VENT_NFVA_IN2) +
+		(staticVentCount * STATIC_NFVA_PER_VENT_IN2) +
 		(totalRidgeLengthFeet * RIDGE_NFVA_PER_LINEAR_FOOT_IN2);
 
 	return {
@@ -96,28 +93,43 @@ function calculateVentilationStatus({
 	const requiredExhaustIn2 = Math.max(0, Number(requiredExhaust) || 0);
 	const installedIntakeIn2 = Math.max(0, Number(installedIntake) || 0);
 	const installedExhaustIn2 = Math.max(0, Number(installedExhaust) || 0);
-	const installedTotalIn2 = installedIntakeIn2 + installedExhaustIn2;
+	const intakeMeets = installedIntakeIn2 >= requiredIntakeIn2;
+	const exhaustMeets = installedExhaustIn2 >= requiredExhaustIn2;
 
-	if (installedTotalIn2 < requiredTotalIn2) {
+	if (intakeMeets && exhaustMeets) {
+		return "Balanced";
+	}
+
+	if (!intakeMeets && !exhaustMeets) {
 		return "Under-ventilated";
 	}
 
-	if (installedIntakeIn2 < requiredIntakeIn2) {
+	if (!intakeMeets && exhaustMeets) {
 		return "Intake Deficient";
 	}
 
-	if (installedExhaustIn2 < requiredExhaustIn2) {
+	if (intakeMeets && !exhaustMeets) {
 		return "Exhaust Deficient";
 	}
 
-	return "Balanced";
+	// Fallback for safety; all boolean combinations are handled above.
+	return requiredTotalIn2 > 0 ? "Under-ventilated" : "Balanced";
+}
+
+function formatVentilationValue(value) {
+	const safeValue = Math.max(0, Number(value) || 0);
+	return `${safeValue.toFixed(1)} in² NFVA`;
 }
 
 export {
-	SOFFIT_INTAKE_NFVA_IN2,
-	STATIC_VENT_NFVA_IN2,
+	INTAKE_NFVA_PER_VENT_IN2,
+	STATIC_NFVA_PER_VENT_IN2,
 	RIDGE_NFVA_PER_LINEAR_FOOT_IN2,
+	calculateAtticArea,
 	calculateRequiredVentilation,
+	calculateRequiredIntake,
+	calculateRequiredExhaust,
 	calculateInstalledVentilation,
-	calculateVentilationStatus
+	calculateVentilationStatus,
+	formatVentilationValue
 };

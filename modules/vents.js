@@ -78,24 +78,38 @@ let staticPreviewNormal = null;
 let staticPreviewPlacementLine = null;
 let ridgePreviewSnappedPoint = null;
 
+// Validity tracking for preview feedback
+let currentPreviewIsValid = false;
+
 const GHOST_INTAKE_COLOR = 0x7dfbff;
 const GHOST_STATIC_COLOR = 0xff2d2d;
 const GHOST_RIDGE_COLOR = 0xff00aa;
 
+// Colors for valid/invalid preview feedback
+const VALID_PREVIEW_COLOR = 0x00ff00;
+const INVALID_PREVIEW_COLOR = 0xff0000;
+
+function resetPreviewState() {
+	intakePreviewSnappedPoint = null;
+	intakePreviewPlacementLine = null;
+	staticPreviewSnappedPoint = null;
+	staticPreviewNormal = null;
+	staticPreviewPlacementLine = null;
+	ridgePreviewSnappedPoint = null;
+	currentPreviewIsValid = false;
+}
+
 function initializeVentPreview() {
-	// Clean up any previous preview group
 	if (ghostPreviewGroup) {
 		scene.remove(ghostPreviewGroup);
 		ghostPreviewGroup = null;
 	}
 
-	// Create new preview group
 	ghostPreviewGroup = new THREE.Group();
 	ghostPreviewGroup.name = "ghostPreviewGroup";
 	ghostPreviewGroup.renderOrder = 100;
 	scene.add(ghostPreviewGroup);
 
-	// Create intake ghost mesh (thin rectangular vent on underside)
 	ghostIntakeMesh = new THREE.Mesh(
 		new THREE.BoxGeometry(INTAKE_WIDTH_FEET, INTAKE_HEIGHT_FEET, INTAKE_LENGTH_FEET),
 		new THREE.MeshStandardMaterial({
@@ -111,7 +125,6 @@ function initializeVentPreview() {
 	ghostIntakeMesh.visible = false;
 	ghostPreviewGroup.add(ghostIntakeMesh);
 
-	// Create static ghost mesh (9"x9" square on roof slope)
 	ghostStaticMesh = new THREE.Mesh(
 		new THREE.BoxGeometry(STATIC_SIZE_FEET, 0.05, STATIC_SIZE_FEET),
 		new THREE.MeshStandardMaterial({
@@ -129,7 +142,6 @@ function initializeVentPreview() {
 	ghostStaticMesh.visible = false;
 	ghostPreviewGroup.add(ghostStaticMesh);
 
-	// Create ridge ghost marker (small sphere on ridge line)
 	ghostRidgeMesh = new THREE.Mesh(
 		new THREE.SphereGeometry(0.12, 10, 10),
 		new THREE.MeshStandardMaterial({
@@ -146,13 +158,19 @@ function initializeVentPreview() {
 	ghostPreviewGroup.add(ghostRidgeMesh);
 
 	currentPreviewMode = null;
+	resetPreviewState();
 }
 
 function hideVentPreview() {
 	if (ghostPreviewGroup) {
 		ghostPreviewGroup.visible = false;
 	}
+	if (ghostIntakeMesh) ghostIntakeMesh.visible = false;
+	if (ghostStaticMesh) ghostStaticMesh.visible = false;
+	if (ghostRidgeMesh) ghostRidgeMesh.visible = false;
+
 	currentPreviewMode = null;
+	resetPreviewState();
 }
 
 function clearVentPreview() {
@@ -170,6 +188,7 @@ function clearVentPreview() {
 		ghostRidgeMesh = null;
 	}
 	currentPreviewMode = null;
+	resetPreviewState();
 }
 
 function findNearestPointOnLine(point, lineStart, lineEnd) {
@@ -185,83 +204,144 @@ function findNearestPointOnLine(point, lineStart, lineEnd) {
 	return lineStart.clone().addScaledVector(lineVec, t);
 }
 
+// --------------------------------------------------
+// Validation Functions for Preview Feedback
+// --------------------------------------------------
+
+function isValidIntakePlacement() {
+	if (!intakePreviewSnappedPoint || !intakePreviewPlacementLine) {
+		return false;
+	}
+
+	const position = new THREE.Vector3(
+		intakePreviewSnappedPoint.x,
+		intakePreviewSnappedPoint.y,
+		intakePreviewSnappedPoint.z
+	);
+
+	return !isDuplicateIntakeVent(position);
+}
+
+function isValidStaticPlacement() {
+	if (!staticPreviewSnappedPoint || !staticPreviewNormal || !staticPreviewPlacementLine) {
+		return false;
+	}
+
+	const position = staticPreviewSnappedPoint.clone
+		? staticPreviewSnappedPoint.clone()
+		: new THREE.Vector3(
+			staticPreviewSnappedPoint.x,
+			staticPreviewSnappedPoint.y,
+			staticPreviewSnappedPoint.z
+		);
+
+	return !isDuplicateStaticVent(position);
+}
+
+function isValidRidgePlacement() {
+	if (!ridgePreviewSnappedPoint) {
+		return false;
+	}
+
+	if (!pendingRidgeStart) {
+		return true;
+	}
+
+	const length = pendingRidgeStart.distanceTo(ridgePreviewSnappedPoint);
+
+	if (length < 0.08) {
+		return false;
+	}
+
+	return !isDuplicateRidgeSegment(pendingRidgeStart, ridgePreviewSnappedPoint);
+}
+
+function updatePreviewMaterialValidity(mesh, isValid) {
+	if (!mesh || !mesh.material) return;
+
+	if (isValid) {
+		mesh.material.color.setHex(VALID_PREVIEW_COLOR);
+		mesh.material.opacity = 0.6;
+		mesh.material.emissive.setHex(0x003300);
+		mesh.material.emissiveIntensity = 0.15;
+	} else {
+		mesh.material.color.setHex(INVALID_PREVIEW_COLOR);
+		mesh.material.opacity = 0.5;
+		mesh.material.emissive.setHex(0x330000);
+		mesh.material.emissiveIntensity = 0.25;
+	}
+}
+
 function updateIntakePreview(hitPoint, placementLine) {
 	if (!ghostPreviewGroup || !ghostIntakeMesh) return;
 
 	const { start, end } = getLineEndpoints(placementLine);
 
-	// Find nearest point on the intake placement line
 	const nearestPoint = findNearestPointOnLine(hitPoint, start, end);
 
-	// Clamp to line bounds along Z axis
 	const clampedZ = THREE.MathUtils.clamp(
 		nearestPoint.z,
 		Math.min(start.z, end.z),
 		Math.max(start.z, end.z)
 	);
 
-	// Position the ghost mesh
 	ghostIntakeMesh.position.set(start.x, start.y + 0.03, clampedZ);
-	ghostIntakeMesh.quaternion.set(0, 0, 0, 1); // Reset rotation (parallel to eaves)
+	ghostIntakeMesh.quaternion.set(0, 0, 0, 1);
 	ghostIntakeMesh.visible = true;
 	ghostIntakeMesh.castShadow = false;
 
-	// Hide other preview types
 	if (ghostStaticMesh) ghostStaticMesh.visible = false;
 	if (ghostRidgeMesh) ghostRidgeMesh.visible = false;
 
 	ghostPreviewGroup.visible = true;
 	currentPreviewMode = "intake";
 
-	// Store snapped position for placement
 	intakePreviewSnappedPoint = { x: start.x, y: start.y + 0.03, z: clampedZ };
 	intakePreviewPlacementLine = placementLine;
-}
 
-function clampStaticVentToZone(position, normal, zone) {
-	// For now, use a simple approach: if the point projects inside the zone bounds, show it
-	// In production, this would do proper 2D clamping on the zone surface
-	// For this POC, we just ensure the preview is positioned correctly
-	return position;
+	currentPreviewIsValid = isValidIntakePlacement();
+	updatePreviewMaterialValidity(ghostIntakeMesh, currentPreviewIsValid);
 }
 
 function updateStaticPreview(hitPoint, placementLine, roofNormal) {
 	if (!ghostPreviewGroup || !ghostStaticMesh) return;
 
-	// Find nearest point on the static placement line
 	const { start, end } = getLineEndpoints(placementLine);
 	const nearestPoint = findNearestPointOnLine(hitPoint, start, end);
 
-	// Clamp to line bounds along Z axis
 	const clampedZ = THREE.MathUtils.clamp(
 		nearestPoint.z,
 		Math.min(start.z, end.z),
 		Math.max(start.z, end.z)
 	);
 
-	// Create orientation from roof slope
+	const normalizedRoofNormal = roofNormal.clone().normalize();
+
 	const orientation = new THREE.Quaternion().setFromUnitVectors(
 		new THREE.Vector3(0, 1, 0),
-		roofNormal.normalize()
+		normalizedRoofNormal
 	);
 
-	// Position on the placement line with small offset
-	ghostStaticMesh.position.set(nearestPoint.x, nearestPoint.y, clampedZ);
-	ghostStaticMesh.position.addScaledVector(roofNormal, 0.03);
+	const previewSurfacePoint = new THREE.Vector3(nearestPoint.x, nearestPoint.y, clampedZ);
+	const placedPosition = previewSurfacePoint.clone().addScaledVector(normalizedRoofNormal, STATIC_SURFACE_OFFSET_FEET);
+
+	ghostStaticMesh.position.copy(placedPosition);
 	ghostStaticMesh.quaternion.copy(orientation);
 	ghostStaticMesh.visible = true;
 	ghostStaticMesh.castShadow = false;
 
-	// Hide other preview types
 	if (ghostIntakeMesh) ghostIntakeMesh.visible = false;
 	if (ghostRidgeMesh) ghostRidgeMesh.visible = false;
 
 	ghostPreviewGroup.visible = true;
 	currentPreviewMode = "static";
 
-	// Store the snapped point for placement
-	staticPreviewSnappedPoint = { x: nearestPoint.x, y: nearestPoint.y, z: clampedZ };
-	staticPreviewNormal = roofNormal.clone();
+	staticPreviewSnappedPoint = placedPosition.clone();
+	staticPreviewNormal = normalizedRoofNormal.clone();
+	staticPreviewPlacementLine = placementLine;
+
+	currentPreviewIsValid = isValidStaticPlacement();
+	updatePreviewMaterialValidity(ghostStaticMesh, currentPreviewIsValid);
 }
 
 function updateRidgePreview(snappedPoint) {
@@ -271,18 +351,29 @@ function updateRidgePreview(snappedPoint) {
 	ghostRidgeMesh.visible = true;
 	ghostRidgeMesh.castShadow = false;
 
-	// Hide other preview types
 	if (ghostIntakeMesh) ghostIntakeMesh.visible = false;
 	if (ghostStaticMesh) ghostStaticMesh.visible = false;
 
 	ghostPreviewGroup.visible = true;
 	currentPreviewMode = "ridge";
+
+	ridgePreviewSnappedPoint = snappedPoint.clone();
+
+	currentPreviewIsValid = isValidRidgePlacement();
+	updatePreviewMaterialValidity(ghostRidgeMesh, currentPreviewIsValid);
 }
 
 function updateVentPreview(pointerNdc, camera, placementMode) {
-	const { leftIntakePlacement, rightIntakePlacement, leftStaticPlacementLine, rightStaticPlacementLine, leftExhaustZone, rightExhaustZone, ridgeCenterLine } = getGeometryState();
+	const {
+		leftIntakePlacement,
+		rightIntakePlacement,
+		leftStaticPlacementLine,
+		rightStaticPlacementLine,
+		leftExhaustZone,
+		rightExhaustZone,
+		ridgeCenterLine
+	} = getGeometryState();
 
-	// If no valid placement mode or preview not initialized, hide preview
 	if (!placementMode || placementMode === "none" || !ghostPreviewGroup) {
 		hideVentPreview();
 		return;
@@ -290,7 +381,6 @@ function updateVentPreview(pointerNdc, camera, placementMode) {
 
 	setRayFromPointer(camera, pointerNdc);
 
-	// Intake mode preview
 	if (placementMode === "intake") {
 		if (!leftIntakePlacement || !rightIntakePlacement) {
 			hideVentPreview();
@@ -307,14 +397,12 @@ function updateVentPreview(pointerNdc, camera, placementMode) {
 		return;
 	}
 
-	// Static mode preview
 	if (placementMode === "static") {
 		if (!leftStaticPlacementLine || !rightStaticPlacementLine) {
 			hideVentPreview();
 			return;
 		}
 
-		// Try raycasting to both placement lines to find which is valid
 		const hits = raycaster.intersectObjects([leftStaticPlacementLine, rightStaticPlacementLine], false);
 		if (!hits.length) {
 			hideVentPreview();
@@ -324,16 +412,16 @@ function updateVentPreview(pointerNdc, camera, placementMode) {
 		const placementLine = hits[0].object;
 		const zone = placementLine.name === "leftStaticPlacementLine" ? leftExhaustZone : rightExhaustZone;
 
-		// Get normal from the associated zone
 		const worldNormal = new THREE.Vector3(0, 1, 0);
 		if (zone && zone.geometry) {
-			const faceNormals = [];
 			const positionAttr = zone.geometry.getAttribute("position");
 			const indexAttr = zone.geometry.index;
+
 			if (indexAttr) {
 				const idx0 = indexAttr.getX(0);
 				const idx1 = indexAttr.getX(1);
 				const idx2 = indexAttr.getX(2);
+
 				const v0 = new THREE.Vector3(
 					positionAttr.getX(idx0),
 					positionAttr.getY(idx0),
@@ -349,6 +437,7 @@ function updateVentPreview(pointerNdc, camera, placementMode) {
 					positionAttr.getY(idx2),
 					positionAttr.getZ(idx2)
 				);
+
 				const edge1 = v1.sub(v0);
 				const edge2 = v2.sub(v0);
 				worldNormal.crossVectors(edge1, edge2).normalize();
@@ -357,11 +446,9 @@ function updateVentPreview(pointerNdc, camera, placementMode) {
 		}
 
 		updateStaticPreview(hits[0].point, placementLine, worldNormal);
-		staticPreviewPlacementLine = placementLine;
 		return;
 	}
 
-	// Ridge mode preview
 	if (placementMode === "ridge") {
 		if (!ridgeCenterLine) {
 			hideVentPreview();
@@ -376,7 +463,6 @@ function updateVentPreview(pointerNdc, camera, placementMode) {
 
 		const snappedPoint = getSnappedPointOnRidge(hits[0].point, ridgeCenterLine);
 		updateRidgePreview(snappedPoint);
-		ridgePreviewSnappedPoint = snappedPoint.clone();
 		return;
 	}
 
@@ -419,12 +505,10 @@ function tryPlaceIntakeVent() {
 		intakePreviewSnappedPoint.z
 	);
 
-	// Check for duplicates
 	if (isDuplicateIntakeVent(position)) {
 		return false;
 	}
 
-	const { start } = getLineEndpoints(intakePreviewPlacementLine);
 	const side = intakePreviewPlacementLine.name === "leftIntakePlacement" ? "left" : "right";
 
 	const ventMesh = new THREE.Mesh(
@@ -453,13 +537,14 @@ function tryPlaceStaticVent() {
 		return false;
 	}
 
-	const position = new THREE.Vector3(
-		staticPreviewSnappedPoint.x,
-		staticPreviewSnappedPoint.y,
-		staticPreviewSnappedPoint.z
-	);
+	const position = staticPreviewSnappedPoint.clone
+		? staticPreviewSnappedPoint.clone()
+		: new THREE.Vector3(
+			staticPreviewSnappedPoint.x,
+			staticPreviewSnappedPoint.y,
+			staticPreviewSnappedPoint.z
+		);
 
-	// Check for duplicates
 	if (isDuplicateStaticVent(position)) {
 		return false;
 	}
@@ -468,13 +553,13 @@ function tryPlaceStaticVent() {
 
 	const orientation = new THREE.Quaternion().setFromUnitVectors(
 		new THREE.Vector3(0, 1, 0),
-		staticPreviewNormal.normalize()
+		staticPreviewNormal.clone().normalize()
 	);
 
 	const ventMesh = new THREE.Mesh(
 		new THREE.BoxGeometry(STATIC_SIZE_FEET, STATIC_HEIGHT_FEET, STATIC_SIZE_FEET),
 		new THREE.MeshStandardMaterial({
-			color: 0xff1a1a,
+			color: STATIC_COLOR,
 			emissive: 0x220000,
 			emissiveIntensity: 0.4,
 			roughness: 0.6,
@@ -483,7 +568,7 @@ function tryPlaceStaticVent() {
 	);
 
 	ventMesh.quaternion.copy(orientation);
-	ventMesh.position.copy(position).addScaledVector(staticPreviewNormal, STATIC_SURFACE_OFFSET_FEET);
+	ventMesh.position.copy(position);
 	ventMesh.name = "staticVent";
 	scene.add(ventMesh);
 
@@ -508,24 +593,24 @@ function getSnappedPointOnRidge(hitPoint, ridgeLine) {
 }
 
 function isDuplicateIntakeVent(position, tolerance = 0.15) {
-	return intakeVents.some(vent => {
+	return intakeVents.some((vent) => {
 		const dist = vent.position.distanceTo(position);
 		return dist < tolerance;
 	});
 }
 
 function isDuplicateStaticVent(position, tolerance = 0.5) {
-	return staticVents.some(vent => {
+	return staticVents.some((vent) => {
 		const dist = vent.position.distanceTo(position);
 		return dist < tolerance;
 	});
 }
 
 function isDuplicateRidgeSegment(startPoint, endPoint, tolerance = 0.2) {
-	return ridgeVents.some(vent => {
+	return ridgeVents.some((vent) => {
 		const distStart = vent.start.distanceTo(startPoint);
 		const distEnd = vent.end.distanceTo(endPoint);
-		return (distStart < tolerance && distEnd < tolerance);
+		return distStart < tolerance && distEnd < tolerance;
 	});
 }
 
@@ -553,7 +638,6 @@ function createRidgeVentGeometry(startPoint, endPoint) {
 	const length = startPoint.distanceTo(endPoint);
 	const midpoint = startPoint.clone().add(endPoint).multiplyScalar(0.5);
 
-	// 1. RIDGE OPENING STRIP - narrow (actual roof opening)
 	const openingMesh = new THREE.Mesh(
 		new THREE.BoxGeometry(RIDGE_WIDTH_FEET, 0.05, length),
 		new THREE.MeshStandardMaterial({
@@ -569,11 +653,7 @@ function createRidgeVentGeometry(startPoint, endPoint) {
 	openingMesh.name = "ridgeOpening";
 	group.add(openingMesh);
 
-	// 2. RIDGE PRODUCT FOOTPRINT - wider cap/flashing representation
-	// The footprint sits on both sides of the ridge
-	const footprintWidth = RIDGE_WIDTH_FEET * 2.5; // Wider than opening
-	const footprintDepth = 0.3; // Extends on each side
-
+	const footprintWidth = RIDGE_WIDTH_FEET * 2.5;
 	const footprintMesh = new THREE.Mesh(
 		new THREE.BoxGeometry(footprintWidth, 0.04, length),
 		new THREE.MeshStandardMaterial({
@@ -604,12 +684,10 @@ function tryPlaceRidgeVent() {
 	const endPoint = ridgePreviewSnappedPoint.clone();
 	const length = pendingRidgeStart.distanceTo(endPoint);
 
-	// Prevent near-zero length segments
 	if (length < 0.08) {
 		return false;
 	}
 
-	// Check for duplicate ridge segments
 	if (isDuplicateRidgeSegment(pendingRidgeStart, endPoint)) {
 		pendingRidgeStart = null;
 		clearPendingRidgeMarker();
@@ -639,8 +717,7 @@ function clearVentArray(vents) {
 	for (const vent of vents) {
 		if (vent.mesh) {
 			scene.remove(vent.mesh);
-			
-			// Handle group meshes (ridge vents)
+
 			if (vent.mesh.isGroup) {
 				vent.mesh.traverse((child) => {
 					if (child.geometry) {
@@ -657,7 +734,6 @@ function clearVentArray(vents) {
 					}
 				});
 			} else {
-				// Single mesh
 				if (vent.mesh.geometry) {
 					vent.mesh.geometry.dispose();
 				}
@@ -681,14 +757,8 @@ function clearAllVents() {
 	clearVentArray(staticVents);
 	clearVentArray(ridgeVents);
 	cancelPendingRidgePlacement();
-	
-	// Clear preview state
-	intakePreviewSnappedPoint = null;
-	intakePreviewPlacementLine = null;
-	staticPreviewSnappedPoint = null;
-	staticPreviewNormal = null;
-	staticPreviewPlacementLine = null;
-	ridgePreviewSnappedPoint = null;
+	resetPreviewState();
+	hideVentPreview();
 }
 
 function getInstalledVentSummary() {
@@ -729,6 +799,10 @@ function hasPendingRidgePlacement() {
 	return Boolean(pendingRidgeStart);
 }
 
+function getCurrentPreviewValidity() {
+	return currentPreviewIsValid;
+}
+
 export {
 	intakeVents,
 	staticVents,
@@ -747,5 +821,6 @@ export {
 	getVentSummary,
 	getPlacedIntakeVents,
 	getPlacedStaticVents,
-	getPlacedRidgeVents
+	getPlacedRidgeVents,
+	getCurrentPreviewValidity
 };
