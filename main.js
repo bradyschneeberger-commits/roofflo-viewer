@@ -13,7 +13,12 @@ import {
     initializeVentPreview,
     updateVentPreview,
     hideVentPreview,
-    clearVentPreview
+    clearVentPreview,
+    exportCurrentVentLayout,
+    generateIntakeOnlyPreset,
+    generateExhaustOnlyPreset,
+    generateBalancedPreset,
+    hasStaticVentConflict
 } from "./modules/vents.js";
 import {
     calculateAtticArea,
@@ -54,8 +59,6 @@ const ventRuleSelect = document.getElementById("vent-rule");
 const intakeVentButton = document.getElementById("btn-intake-vent");
 const staticVentButton = document.getElementById("btn-static-vent");
 const ridgeVentButton = document.getElementById("btn-ridge-vent");
-const startSimulationButton = document.getElementById("btn-start-simulation");
-const resetButton = document.getElementById("btn-reset");
 const controlPanel = document.getElementById("control-panel");
 const resultsPanel = document.getElementById("results-panel");
 const controlsToggleButton = document.getElementById("controls-toggle");
@@ -73,6 +76,12 @@ const resultStatus = document.getElementById("result-status");
 const ventStatusToast = document.getElementById("vent-status-toast");
 const ventStatusMessage = document.getElementById("vent-status-message");
 const ventStatusCloseButton = document.getElementById("vent-status-close");
+const toolbarSaveCurrentButton = document.getElementById("btn-toolbar-save-current");
+const toolbarIntakeOnlyButton = document.getElementById("btn-toolbar-intake-only");
+const toolbarExhaustOnlyButton = document.getElementById("btn-toolbar-exhaust-only");
+const toolbarBalancedButton = document.getElementById("btn-toolbar-balanced");
+const toolbarStartButton = document.getElementById("btn-toolbar-start");
+const toolbarResetButton = document.getElementById("btn-toolbar-reset");
 
 const placementButtons = [
     { mode: PlacementMode.INTAKE, button: intakeVentButton },
@@ -88,6 +97,7 @@ let mobileUiState = {
 };
 let userDismissedVentMessage = false;
 let lastVentStatusKey = null;
+let savedVentLayout = null;
 
 // Store selected ventilation rule for future calculations.
 let selectedVentilationRule = ventRuleSelect?.value || "1/150";
@@ -110,14 +120,12 @@ function getAirflowVentState() {
 }
 
 function updateSimulationButtonUI() {
-    if (!startSimulationButton) {
-        return;
-    }
-
     const running = simulationState === SimulationState.RUNNING;
-    startSimulationButton.disabled = running;
-    startSimulationButton.textContent = running ? "Simulation Running" : "Start Simulation";
-    startSimulationButton.classList.toggle("is-running", running);
+
+    if (toolbarStartButton) {
+        toolbarStartButton.disabled = running;
+        toolbarStartButton.textContent = running ? "Simulation Running" : "Start Simulation";
+    }
 }
 
 function isMobilePanelMode() {
@@ -266,6 +274,14 @@ function getVentilationState() {
 }
 
 function getVentilationMessageData() {
+    if (hasStaticVentConflict()) {
+        return {
+            message: "More exhaust is not always better - vents on both sides can compete and reduce proper airflow",
+            state: "warning",
+            key: "conflict:static-both-slopes"
+        };
+    }
+
     const ventilationState = getVentilationState();
 
     if (ventilationState === "none") {
@@ -669,6 +685,50 @@ function onResetClicked() {
     }
 }
 
+function applyToolbarPreset(generator) {
+    if (typeof generator !== "function") {
+        return;
+    }
+
+    if (isSimulationRunning()) {
+        resetAirflowSimulation();
+    }
+
+    simulationState = SimulationState.IDLE;
+    activePlacementMode = PlacementMode.NONE;
+    pointerDownInfo = null;
+    cancelPendingRidgePlacement();
+    hideVentPreview();
+
+    const applied = generator();
+    if (!applied) {
+        return;
+    }
+
+    updateSimulationButtonUI();
+    updatePlacementButtonUI();
+    refreshResultsPanel();
+    updateVentStatusMessage({ forceReveal: true });
+
+    if (isMobilePanelMode()) {
+        openResultsPanel();
+    }
+}
+
+function onSaveCurrentLayoutClicked() {
+    savedVentLayout = exportCurrentVentLayout();
+
+    if (!toolbarSaveCurrentButton) {
+        return;
+    }
+
+    const originalText = toolbarSaveCurrentButton.textContent;
+    toolbarSaveCurrentButton.textContent = "Saved";
+    window.setTimeout(() => {
+        toolbarSaveCurrentButton.textContent = originalText || "Save Current";
+    }, 1200);
+}
+
 // Build default geometry on load.
 rebuildGeometryFromInputs();
 refreshResultsPanel();
@@ -682,11 +742,15 @@ ventRuleSelect?.addEventListener("change", onVentRuleChanged);
 intakeVentButton?.addEventListener("click", () => setPlacementMode(PlacementMode.INTAKE));
 staticVentButton?.addEventListener("click", () => setPlacementMode(PlacementMode.STATIC));
 ridgeVentButton?.addEventListener("click", () => setPlacementMode(PlacementMode.RIDGE));
-startSimulationButton?.addEventListener("click", onStartSimulationClicked);
-resetButton?.addEventListener("click", onResetClicked);
 controlsToggleButton?.addEventListener("click", toggleControlsPanel);
 resultsToggleButton?.addEventListener("click", toggleResultsPanel);
 ventStatusCloseButton?.addEventListener("click", dismissVentStatusMessage);
+toolbarSaveCurrentButton?.addEventListener("click", onSaveCurrentLayoutClicked);
+toolbarIntakeOnlyButton?.addEventListener("click", () => applyToolbarPreset(generateIntakeOnlyPreset));
+toolbarExhaustOnlyButton?.addEventListener("click", () => applyToolbarPreset(generateExhaustOnlyPreset));
+toolbarBalancedButton?.addEventListener("click", () => applyToolbarPreset(() => generateBalancedPreset({ ventilationRule: selectedVentilationRule })));
+toolbarStartButton?.addEventListener("click", onStartSimulationClicked);
+toolbarResetButton?.addEventListener("click", onResetClicked);
 
 renderer.domElement.addEventListener("pointerdown", onViewerPointerDown);
 renderer.domElement.addEventListener("pointerup", onViewerClicked);

@@ -25,6 +25,19 @@
     </div>
   </div>
 
+  <header id="top-toolbar" aria-label="Quick scenarios toolbar">
+    <div class="toolbar-group" aria-label="Preset scenarios">
+      <button id="btn-toolbar-save-current" type="button" class="toolbar-btn">Save Current</button>
+      <button id="btn-toolbar-intake-only" type="button" class="toolbar-btn">Intake Only</button>
+      <button id="btn-toolbar-exhaust-only" type="button" class="toolbar-btn">Exhaust Only</button>
+      <button id="btn-toolbar-balanced" type="button" class="toolbar-btn">Balanced</button>
+    </div>
+    <div class="toolbar-group toolbar-group-actions" aria-label="Simulation actions">
+      <button id="btn-toolbar-start" type="button" class="toolbar-btn toolbar-btn-primary">Start Simulation</button>
+      <button id="btn-toolbar-reset" type="button" class="toolbar-btn toolbar-btn-danger">Reset</button>
+    </div>
+  </header>
+
   <aside id="control-panel" aria-label="RoofFlo controls">
     <button id="controls-toggle" class="panel-toggle panel-toggle-controls" type="button" aria-expanded="false" aria-controls="control-panel-content">
       <span class="panel-toggle-label">Controls</span>
@@ -85,13 +98,6 @@
       </div>
     </div>
 
-    <div class="field-group control-group">
-      <label>Simulation</label>
-      <div class="button-grid button-grid-sim">
-        <button id="btn-start-simulation" type="button" class="control-btn control-btn-primary">Start Simulation</button>
-        <button id="btn-reset" type="button" class="control-btn control-btn-danger">Reset</button>
-      </div>
-    </div>
     </div>
   </aside>
 

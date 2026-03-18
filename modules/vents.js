@@ -31,6 +31,12 @@ clearAllVents()
 import * as THREE from "three";
 import { scene } from "./scene.js";
 import { getGeometryState } from "./geometry.js";
+import {
+	calculateAtticArea,
+	calculateRequiredVentilation,
+	calculateRequiredIntake,
+	calculateRequiredExhaust
+} from "./calculations.js";
 
 const INTAKE_COLOR = 0x7dfbff;
 const STATIC_COLOR = 0xff2d2d;
@@ -829,6 +835,566 @@ function getCurrentPreviewValidity() {
 	return currentPreviewIsValid;
 }
 
+function hasStaticVentConflict() {
+	const hasLeft = staticVents.some((vent) => vent.side === "left");
+	const hasRight = staticVents.some((vent) => vent.side === "right");
+	return hasLeft && hasRight;
+}
+
+function getLineZBounds(line) {
+	if (!line?.geometry) {
+		return null;
+	}
+
+	const { start, end } = getLineEndpoints(line);
+	return {
+		start,
+		end,
+		zMin: Math.min(start.z, end.z),
+		zMax: Math.max(start.z, end.z)
+	};
+}
+
+function getExhaustZoneNormal(zoneMesh) {
+	if (!zoneMesh?.geometry) {
+		return new THREE.Vector3(0, 1, 0);
+	}
+
+	const positionAttr = zoneMesh.geometry.getAttribute("position");
+	const indexAttr = zoneMesh.geometry.index;
+
+	if (!positionAttr || !indexAttr || indexAttr.count < 3) {
+		return new THREE.Vector3(0, 1, 0);
+	}
+
+	const idx0 = indexAttr.getX(0);
+	const idx1 = indexAttr.getX(1);
+	const idx2 = indexAttr.getX(2);
+
+	const v0 = new THREE.Vector3(
+		positionAttr.getX(idx0),
+		positionAttr.getY(idx0),
+		positionAttr.getZ(idx0)
+	);
+	const v1 = new THREE.Vector3(
+		positionAttr.getX(idx1),
+		positionAttr.getY(idx1),
+		positionAttr.getZ(idx1)
+	);
+	const v2 = new THREE.Vector3(
+		positionAttr.getX(idx2),
+		positionAttr.getY(idx2),
+		positionAttr.getZ(idx2)
+	);
+
+	const edge1 = v1.sub(v0);
+	const edge2 = v2.sub(v0);
+	const normal = new THREE.Vector3().crossVectors(edge1, edge2).normalize();
+	normal.transformDirection(zoneMesh.matrixWorld);
+
+	return normal.normalize();
+}
+
+function placeIntakeVentAt(line, zPosition) {
+	const lineBounds = getLineZBounds(line);
+	if (!lineBounds) {
+		return false;
+	}
+
+	const side = line.name === "leftIntakePlacement" ? "left" : "right";
+	const clampedZ = THREE.MathUtils.clamp(zPosition, lineBounds.zMin, lineBounds.zMax);
+	const minCenterSpacing = INTAKE_LENGTH_FEET * 0.9;
+
+	const duplicateOnSameSide = intakeVents.some((vent) => {
+		if (vent.side !== side) {
+			return false;
+		}
+
+		return Math.abs(vent.position.z - clampedZ) < minCenterSpacing;
+	});
+
+	if (duplicateOnSameSide) {
+		return false;
+	}
+
+	const ventMesh = new THREE.Mesh(
+		new THREE.BoxGeometry(INTAKE_WIDTH_FEET, INTAKE_HEIGHT_FEET, INTAKE_LENGTH_FEET),
+		new THREE.MeshStandardMaterial({ color: INTAKE_COLOR, emissive: 0x09353a, emissiveIntensity: 0.35 })
+	);
+	ventMesh.position.set(lineBounds.start.x, lineBounds.start.y + 0.03, clampedZ);
+	ventMesh.name = "intakeVent";
+	scene.add(ventMesh);
+
+	intakeVents.push({
+		type: "intake",
+		side,
+		position: ventMesh.position.clone(),
+		orientation: new THREE.Vector3(0, 0, 1),
+		width: INTAKE_WIDTH_FEET,
+		length: INTAKE_LENGTH_FEET,
+		mesh: ventMesh
+	});
+
+	return true;
+}
+
+function placeStaticVentAt(line, zoneMesh, zPosition) {
+	const lineBounds = getLineZBounds(line);
+	if (!lineBounds || !zoneMesh) {
+		return false;
+	}
+
+	const side = line.name === "leftStaticPlacementLine" ? "left" : "right";
+	const clampedZ = THREE.MathUtils.clamp(zPosition, lineBounds.zMin, lineBounds.zMax);
+	const roofNormal = getExhaustZoneNormal(zoneMesh);
+
+	const surfacePoint = new THREE.Vector3(lineBounds.start.x, lineBounds.start.y, clampedZ);
+	const placedPosition = surfacePoint.clone().addScaledVector(roofNormal, STATIC_SURFACE_OFFSET_FEET);
+
+	if (isDuplicateStaticVent(placedPosition)) {
+		return false;
+	}
+
+	const orientation = new THREE.Quaternion().setFromUnitVectors(
+		new THREE.Vector3(0, 1, 0),
+		roofNormal
+	);
+
+	const ventMesh = new THREE.Mesh(
+		new THREE.BoxGeometry(STATIC_SIZE_FEET, STATIC_HEIGHT_FEET, STATIC_SIZE_FEET),
+		new THREE.MeshStandardMaterial({
+			color: STATIC_COLOR,
+			emissive: 0x220000,
+			emissiveIntensity: 0.4,
+			roughness: 0.6,
+			metalness: 0
+		})
+	);
+
+	ventMesh.quaternion.copy(orientation);
+	ventMesh.position.copy(placedPosition);
+	ventMesh.name = "staticVent";
+	scene.add(ventMesh);
+
+	staticVents.push({
+		type: "static",
+		side,
+		position: ventMesh.position.clone(),
+		orientation: ventMesh.quaternion.clone(),
+		openingSizeFeet: STATIC_SIZE_FEET,
+		mesh: ventMesh
+	});
+
+	return true;
+}
+
+function placeRidgeVentSegment(startPoint, endPoint) {
+	if (!startPoint || !endPoint) {
+		return false;
+	}
+
+	const length = startPoint.distanceTo(endPoint);
+	if (length < 0.08 || isDuplicateRidgeSegment(startPoint, endPoint)) {
+		return false;
+	}
+
+	const ridgeGroup = createRidgeVentGeometry(startPoint, endPoint);
+	scene.add(ridgeGroup);
+
+	ridgeVents.push({
+		type: "ridge",
+		position: startPoint.clone().add(endPoint).multiplyScalar(0.5),
+		orientation: new THREE.Vector3(0, 0, 1),
+		start: startPoint.clone(),
+		end: endPoint.clone(),
+		length,
+		width: RIDGE_WIDTH_FEET,
+		mesh: ridgeGroup
+	});
+
+	return true;
+}
+
+function createLineSampleZ(line, desiredSpacingFeet = 12, edgeInsetFeet = 1) {
+	const lineBounds = getLineZBounds(line);
+	if (!lineBounds) {
+		return [];
+	}
+
+	const usableStart = lineBounds.zMin + edgeInsetFeet;
+	const usableEnd = lineBounds.zMax - edgeInsetFeet;
+	const usableLength = Math.max(0, usableEnd - usableStart);
+
+	if (usableLength <= 0) {
+		return [(lineBounds.zMin + lineBounds.zMax) / 2];
+	}
+
+	const desiredSpacing = Math.max(4, desiredSpacingFeet);
+	const count = Math.max(2, Math.floor(usableLength / desiredSpacing) + 1);
+	const positions = [];
+
+	for (let i = 0; i < count; i += 1) {
+		const t = count === 1 ? 0.5 : i / (count - 1);
+		positions.push(usableStart + (usableLength * t));
+	}
+
+	return positions;
+}
+
+function getLineLength(line) {
+	const bounds = getLineZBounds(line);
+	if (!bounds) {
+		return 0;
+	}
+
+	return bounds.end.distanceTo(bounds.start);
+}
+
+function getMaxVentCountOnLine(line, edgeInsetFeet, minSpacingFeet) {
+	const length = getLineLength(line);
+	const usableLength = Math.max(0, length - (edgeInsetFeet * 2));
+
+	if (usableLength <= 0) {
+		return 1;
+	}
+
+	return Math.max(1, Math.floor(usableLength / minSpacingFeet) + 1);
+}
+
+function createEvenlySpacedZForCount(line, count, edgeInsetFeet = 1, minSpacingFeet = 1) {
+	if (!line || count <= 0) {
+		return [];
+	}
+
+	const bounds = getLineZBounds(line);
+	if (!bounds) {
+		return [];
+	}
+
+	const maxCount = getMaxVentCountOnLine(line, edgeInsetFeet, minSpacingFeet);
+	const safeCount = Math.min(count, maxCount);
+
+	if (safeCount <= 1) {
+		return [(bounds.zMin + bounds.zMax) / 2];
+	}
+
+	const start = bounds.zMin + edgeInsetFeet;
+	const end = bounds.zMax - edgeInsetFeet;
+	const span = Math.max(0, end - start);
+
+	if (span === 0) {
+		return [(bounds.zMin + bounds.zMax) / 2];
+	}
+
+	const positions = [];
+	for (let i = 0; i < safeCount; i += 1) {
+		const t = safeCount === 1 ? 0.5 : i / (safeCount - 1);
+		positions.push(start + (span * t));
+	}
+
+	return positions;
+}
+
+function splitCountAcrossSides(totalCount) {
+	const left = Math.ceil(totalCount / 2);
+	const right = Math.floor(totalCount / 2);
+	return { left, right };
+}
+
+function getRoundedRidgeLengthCandidates(targetLength, maxLength, step = 0.5) {
+	const safeStep = Math.max(0.25, step);
+	const clampedTarget = THREE.MathUtils.clamp(targetLength, 0, maxLength);
+	const lower = Math.floor(clampedTarget / safeStep) * safeStep;
+	const upper = Math.ceil(clampedTarget / safeStep) * safeStep;
+	const rounded = Math.round(clampedTarget / safeStep) * safeStep;
+
+	const candidates = new Set([
+		THREE.MathUtils.clamp(lower, 0, maxLength),
+		THREE.MathUtils.clamp(rounded, 0, maxLength),
+		THREE.MathUtils.clamp(upper, 0, maxLength)
+	]);
+
+	return Array.from(candidates);
+}
+
+function exportCurrentVentLayout() {
+	return {
+		intake: intakeVents.map((vent) => ({
+			side: vent.side,
+			z: vent.position.z
+		})),
+		static: staticVents.map((vent) => ({
+			side: vent.side,
+			z: vent.position.z
+		})),
+		ridge: ridgeVents.map((vent) => ({
+			start: { x: vent.start.x, y: vent.start.y, z: vent.start.z },
+			end: { x: vent.end.x, y: vent.end.y, z: vent.end.z }
+		}))
+	};
+}
+
+function restoreVentLayout(layout) {
+	if (!layout || typeof layout !== "object") {
+		return false;
+	}
+
+	const {
+		leftIntakePlacement,
+		rightIntakePlacement,
+		leftStaticPlacementLine,
+		rightStaticPlacementLine,
+		leftExhaustZone,
+		rightExhaustZone,
+		ridgeCenterLine
+	} = getGeometryState();
+
+	if (!leftIntakePlacement || !rightIntakePlacement || !leftStaticPlacementLine || !rightStaticPlacementLine || !ridgeCenterLine) {
+		return false;
+	}
+
+	clearAllVents();
+
+	for (const intake of layout.intake || []) {
+		const line = intake.side === "left" ? leftIntakePlacement : rightIntakePlacement;
+		placeIntakeVentAt(line, Number(intake.z));
+	}
+
+	for (const exhaust of layout.static || []) {
+		const line = exhaust.side === "left" ? leftStaticPlacementLine : rightStaticPlacementLine;
+		const zone = exhaust.side === "left" ? leftExhaustZone : rightExhaustZone;
+		placeStaticVentAt(line, zone, Number(exhaust.z));
+	}
+
+	const ridgeBounds = getLineZBounds(ridgeCenterLine);
+	for (const ridge of layout.ridge || []) {
+		if (!ridgeBounds) {
+			continue;
+		}
+
+		const startZ = THREE.MathUtils.clamp(Number(ridge.start?.z), ridgeBounds.zMin, ridgeBounds.zMax);
+		const endZ = THREE.MathUtils.clamp(Number(ridge.end?.z), ridgeBounds.zMin, ridgeBounds.zMax);
+
+		const startPoint = new THREE.Vector3(ridgeBounds.start.x, ridgeBounds.start.y, startZ);
+		const endPoint = new THREE.Vector3(ridgeBounds.start.x, ridgeBounds.start.y, endZ);
+		placeRidgeVentSegment(startPoint, endPoint);
+	}
+
+	cancelPendingRidgePlacement();
+	hideVentPreview();
+	return true;
+}
+
+function generateIntakeOnlyPreset() {
+	const { leftIntakePlacement, rightIntakePlacement } = getGeometryState();
+	if (!leftIntakePlacement || !rightIntakePlacement) {
+		return false;
+	}
+
+	clearAllVents();
+
+	const leftPositions = createLineSampleZ(leftIntakePlacement, 10, 1.2);
+	const rightPositions = createLineSampleZ(rightIntakePlacement, 10, 1.2);
+
+	leftPositions.forEach((z) => placeIntakeVentAt(leftIntakePlacement, z));
+	rightPositions.forEach((z) => placeIntakeVentAt(rightIntakePlacement, z));
+
+	cancelPendingRidgePlacement();
+	hideVentPreview();
+	return true;
+}
+
+function generateExhaustOnlyPreset() {
+	const {
+		leftStaticPlacementLine,
+		leftExhaustZone,
+		ridgeCenterLine
+	} = getGeometryState();
+
+	if (!ridgeCenterLine) {
+		return false;
+	}
+
+	clearAllVents();
+
+	let placedExhaust = false;
+	const ridgeBounds = getLineZBounds(ridgeCenterLine);
+	if (ridgeBounds) {
+		const ridgeStart = new THREE.Vector3(ridgeBounds.start.x, ridgeBounds.start.y, ridgeBounds.zMin + 1);
+		const ridgeEnd = new THREE.Vector3(ridgeBounds.start.x, ridgeBounds.start.y, ridgeBounds.zMax - 1);
+		placedExhaust = placeRidgeVentSegment(ridgeStart, ridgeEnd);
+	}
+
+	if (!placedExhaust && leftStaticPlacementLine && leftExhaustZone) {
+		const fallbackPositions = createEvenlySpacedZForCount(leftStaticPlacementLine, 2, 1.5, STATIC_SIZE_FEET * 0.9);
+		fallbackPositions.forEach((z) => {
+			if (placeStaticVentAt(leftStaticPlacementLine, leftExhaustZone, z)) {
+				placedExhaust = true;
+			}
+		});
+	}
+
+	cancelPendingRidgePlacement();
+	hideVentPreview();
+	return placedExhaust;
+}
+
+function generateBalancedPreset({ ventilationRule = "1/150" } = {}) {
+	const {
+		currentGeometryParams,
+		leftIntakePlacement,
+		rightIntakePlacement,
+		leftStaticPlacementLine,
+		rightStaticPlacementLine,
+		leftExhaustZone,
+		rightExhaustZone,
+		ridgeCenterLine
+	} = getGeometryState();
+
+	if (
+		!currentGeometryParams ||
+		!leftIntakePlacement ||
+		!rightIntakePlacement ||
+		!leftStaticPlacementLine ||
+		!rightStaticPlacementLine ||
+		!ridgeCenterLine
+	) {
+		return false;
+	}
+
+	const atticAreaSqFt = calculateAtticArea(
+		currentGeometryParams.buildingWidth,
+		currentGeometryParams.buildingLength
+	);
+	const requiredVentilationIn2 = calculateRequiredVentilation(atticAreaSqFt, ventilationRule);
+	const requiredIntakeIn2 = calculateRequiredIntake(requiredVentilationIn2);
+	const requiredExhaustIn2 = calculateRequiredExhaust(requiredVentilationIn2);
+
+	const intakeMinSpacing = INTAKE_LENGTH_FEET * 0.9;
+	const staticMinSpacing = STATIC_SIZE_FEET * 0.9;
+	const intakeInset = 1;
+	const staticInset = 1.5;
+	const ridgeInset = 1;
+	const ridgeStepFeet = 0.5;
+
+	const maxIntakeLeft = getMaxVentCountOnLine(leftIntakePlacement, intakeInset, intakeMinSpacing);
+	const maxIntakeRight = getMaxVentCountOnLine(rightIntakePlacement, intakeInset, intakeMinSpacing);
+	const maxStaticLeft = getMaxVentCountOnLine(leftStaticPlacementLine, staticInset, staticMinSpacing);
+	const maxStaticRight = getMaxVentCountOnLine(rightStaticPlacementLine, staticInset, staticMinSpacing);
+	const maxIntakeTotal = maxIntakeLeft + maxIntakeRight;
+	const preferredStaticSide = maxStaticLeft >= maxStaticRight ? "left" : "right";
+	const preferredStaticLine = preferredStaticSide === "left" ? leftStaticPlacementLine : rightStaticPlacementLine;
+	const preferredStaticZone = preferredStaticSide === "left" ? leftExhaustZone : rightExhaustZone;
+	const preferredStaticMax = preferredStaticSide === "left" ? maxStaticLeft : maxStaticRight;
+
+	const ridgeBounds = getLineZBounds(ridgeCenterLine);
+	if (!ridgeBounds) {
+		return false;
+	}
+
+	const maxRidgeLength = Math.max(0, (ridgeBounds.zMax - ridgeBounds.zMin) - (ridgeInset * 2));
+	const intakeTargetCount = Math.ceil(requiredIntakeIn2 / INTAKE_NFVA_IN2);
+	const intakeStart = Math.max(2, intakeTargetCount - 3);
+	const intakeEnd = Math.min(maxIntakeTotal, intakeTargetCount + 10);
+
+	let bestLayout = null;
+
+	for (let intakeCount = intakeStart; intakeCount <= intakeEnd; intakeCount += 1) {
+		const intakeNFVA = intakeCount * INTAKE_NFVA_IN2;
+
+		const staticStart = 0;
+		const staticEnd = Math.min(preferredStaticMax, Math.ceil(requiredExhaustIn2 / STATIC_NFVA_IN2) + 4);
+
+		for (let staticCount = staticStart; staticCount <= staticEnd; staticCount += 1) {
+			const staticNFVA = staticCount * STATIC_NFVA_IN2;
+			const desiredExhaustNFVA = Math.max(requiredExhaustIn2, intakeNFVA);
+			const desiredRidgeLength = (desiredExhaustNFVA - staticNFVA) / RIDGE_NFVA_PER_FOOT_IN2;
+			const ridgeCandidates = getRoundedRidgeLengthCandidates(desiredRidgeLength, maxRidgeLength, ridgeStepFeet);
+
+			for (const ridgeLength of ridgeCandidates) {
+				const exhaustNFVA = staticNFVA + (ridgeLength * RIDGE_NFVA_PER_FOOT_IN2);
+				const intakeDeficit = Math.max(0, requiredIntakeIn2 - intakeNFVA);
+				const exhaustDeficit = Math.max(0, requiredExhaustIn2 - exhaustNFVA);
+				const deficiencyPenalty = ((intakeDeficit + exhaustDeficit) * 1000);
+				const balancePenalty = Math.abs(intakeNFVA - exhaustNFVA) * 8;
+				const requiredGapPenalty = (
+					Math.abs(intakeNFVA - requiredIntakeIn2) +
+					Math.abs(exhaustNFVA - requiredExhaustIn2)
+				) * 2;
+				const overagePenalty = (
+					Math.max(0, intakeNFVA - requiredIntakeIn2) +
+					Math.max(0, exhaustNFVA - requiredExhaustIn2)
+				) * 0.3;
+				const visualPenalty = (intakeCount * 0.5) + (staticCount * 4) + (ridgeLength > 0 ? 1 : 0);
+
+				const score = deficiencyPenalty + balancePenalty + requiredGapPenalty + overagePenalty + visualPenalty;
+
+				if (!bestLayout || score < bestLayout.score) {
+					bestLayout = {
+						score,
+						intakeCount,
+						staticCount,
+						ridgeLength,
+						intakeNFVA,
+						exhaustNFVA
+					};
+				}
+			}
+		}
+	}
+
+	if (!bestLayout) {
+		return false;
+	}
+
+	clearAllVents();
+
+	const intakeSplit = splitCountAcrossSides(bestLayout.intakeCount);
+	const intakeLeft = createEvenlySpacedZForCount(
+		leftIntakePlacement,
+		Math.min(intakeSplit.left, maxIntakeLeft),
+		intakeInset,
+		intakeMinSpacing
+	);
+	const intakeRight = createEvenlySpacedZForCount(
+		rightIntakePlacement,
+		Math.min(intakeSplit.right, maxIntakeRight),
+		intakeInset,
+		intakeMinSpacing
+	);
+
+	intakeLeft.forEach((z) => placeIntakeVentAt(leftIntakePlacement, z));
+	intakeRight.forEach((z) => placeIntakeVentAt(rightIntakePlacement, z));
+
+	if (bestLayout.staticCount > 0) {
+		const staticPositions = createEvenlySpacedZForCount(
+			preferredStaticLine,
+			bestLayout.staticCount,
+			staticInset,
+			staticMinSpacing
+		);
+
+		staticPositions.forEach((z) => placeStaticVentAt(preferredStaticLine, preferredStaticZone, z));
+	}
+
+	if (bestLayout.ridgeLength > 0.01) {
+		const ridgeMid = (ridgeBounds.zMin + ridgeBounds.zMax) / 2;
+		const halfLength = bestLayout.ridgeLength / 2;
+		const ridgeStartZ = THREE.MathUtils.clamp(ridgeMid - halfLength, ridgeBounds.zMin + ridgeInset, ridgeBounds.zMax - ridgeInset);
+		const ridgeEndZ = THREE.MathUtils.clamp(ridgeMid + halfLength, ridgeBounds.zMin + ridgeInset, ridgeBounds.zMax - ridgeInset);
+
+		if (ridgeEndZ - ridgeStartZ > 0.08) {
+			const ridgeStart = new THREE.Vector3(ridgeBounds.start.x, ridgeBounds.start.y, ridgeStartZ);
+			const ridgeEnd = new THREE.Vector3(ridgeBounds.start.x, ridgeBounds.start.y, ridgeEndZ);
+			placeRidgeVentSegment(ridgeStart, ridgeEnd);
+		}
+	}
+
+	cancelPendingRidgePlacement();
+	hideVentPreview();
+	return true;
+}
+
 export {
 	intakeVents,
 	staticVents,
@@ -848,5 +1414,11 @@ export {
 	getPlacedIntakeVents,
 	getPlacedStaticVents,
 	getPlacedRidgeVents,
-	getCurrentPreviewValidity
+	getCurrentPreviewValidity,
+	hasStaticVentConflict,
+	exportCurrentVentLayout,
+	restoreVentLayout,
+	generateIntakeOnlyPreset,
+	generateExhaustOnlyPreset,
+	generateBalancedPreset
 };
