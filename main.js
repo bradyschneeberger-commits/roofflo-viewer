@@ -1,4 +1,4 @@
-import { scene, camera, renderer, controls } from "./modules/scene.js";
+import { scene, camera, renderer, controls, gridHelper } from "./modules/scene.js";
 import { createAtticGeometry, getGeometryState } from "./modules/geometry.js";
 import {
     tryPlaceIntakeVent,
@@ -82,6 +82,7 @@ const toolbarRestoreCurrentButton = document.getElementById("btn-toolbar-restore
 const toolbarIntakeOnlyButton = document.getElementById("btn-toolbar-intake-only");
 const toolbarExhaustOnlyButton = document.getElementById("btn-toolbar-exhaust-only");
 const toolbarBalancedButton = document.getElementById("btn-toolbar-balanced");
+const toolbarGridToggleButton = document.getElementById("btn-toolbar-grid-toggle");
 const toolbarStartButton = document.getElementById("btn-toolbar-start");
 const toolbarResetButton = document.getElementById("btn-toolbar-reset");
 
@@ -101,6 +102,7 @@ let userDismissedVentMessage = false;
 let lastVentStatusKey = null;
 let savedVentLayout = null;
 let transientStatusTimer = null;
+let isGridVisible = true;
 
 // Store selected ventilation rule for future calculations.
 let selectedVentilationRule = ventRuleSelect?.value || "1/150";
@@ -129,6 +131,22 @@ function updateSimulationButtonUI() {
         toolbarStartButton.disabled = running;
         toolbarStartButton.textContent = running ? "Simulation Running" : "Start Simulation";
     }
+}
+
+function syncGridVisibilityUI() {
+    gridHelper.visible = isGridVisible;
+
+    if (!toolbarGridToggleButton) {
+        return;
+    }
+
+    toolbarGridToggleButton.textContent = isGridVisible ? "Hide" : "Show";
+    toolbarGridToggleButton.setAttribute("aria-label", isGridVisible ? "Hide grid" : "Show grid");
+}
+
+function onGridToggleClicked() {
+    isGridVisible = !isGridVisible;
+    syncGridVisibilityUI();
 }
 
 function isMobilePanelMode() {
@@ -823,6 +841,7 @@ toolbarRestoreCurrentButton?.addEventListener("click", onRestoreCurrentLayoutCli
 toolbarIntakeOnlyButton?.addEventListener("click", () => applyToolbarPreset(generateIntakeOnlyPreset));
 toolbarExhaustOnlyButton?.addEventListener("click", () => applyToolbarPreset(generateExhaustOnlyPreset));
 toolbarBalancedButton?.addEventListener("click", () => applyToolbarPreset(() => generateBalancedPreset({ ventilationRule: selectedVentilationRule })));
+toolbarGridToggleButton?.addEventListener("click", onGridToggleClicked);
 toolbarStartButton?.addEventListener("click", onStartSimulationClicked);
 toolbarResetButton?.addEventListener("click", onResetClicked);
 
@@ -834,6 +853,7 @@ renderer.domElement.addEventListener("pointerleave", onViewerPointerLeave);
 window.addEventListener("resize", syncResponsiveUiState);
 
 updateSimulationButtonUI();
+syncGridVisibilityUI();
 updatePlacementButtonUI();
 syncResponsiveUiState();
 setRestoreAvailabilityUI();

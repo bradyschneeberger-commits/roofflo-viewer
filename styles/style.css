@@ -90,6 +90,18 @@ body {
 	flex-shrink: 0;
 }
 
+.toolbar-group-grid {
+	flex-shrink: 0;
+}
+
+.toolbar-label {
+	font-size: 13px;
+	font-weight: 700;
+	letter-spacing: 0.01em;
+	color: rgba(226, 232, 240, 0.92);
+	white-space: nowrap;
+}
+
 .toolbar-btn {
 	height: 38px;
 	padding: 0 12px;
@@ -638,6 +650,10 @@ select:focus {
 		font-size: 12px;
 	}
 
+	.toolbar-label {
+		font-size: 12px;
+	}
+
 	#control-panel {
 		width: min(320px, calc(100vw - 24px));
 		padding: 14px;
@@ -676,6 +692,10 @@ select:focus {
 	.toolbar-btn {
 		height: 34px;
 		padding: 0 9px;
+		font-size: 12px;
+	}
+
+	.toolbar-label {
 		font-size: 12px;
 	}
 

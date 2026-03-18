@@ -24,6 +24,7 @@ scene
 camera
 renderer
 controls
+gridHelper
 */
 
 // Import Three.js modules
@@ -69,4 +70,4 @@ window.addEventListener('resize', () => {
 });
 
 // Export the scene components
-export { scene, camera, renderer, controls };
+export { scene, camera, renderer, controls, gridHelper };
