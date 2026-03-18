@@ -70,6 +70,9 @@ const resultInstalledExhaust = document.getElementById("result-installed-exhaust
 const resultIntakeDiff = document.getElementById("result-intake-diff");
 const resultExhaustDiff = document.getElementById("result-exhaust-diff");
 const resultStatus = document.getElementById("result-status");
+const ventStatusToast = document.getElementById("vent-status-toast");
+const ventStatusMessage = document.getElementById("vent-status-message");
+const ventStatusCloseButton = document.getElementById("vent-status-close");
 
 const placementButtons = [
     { mode: PlacementMode.INTAKE, button: intakeVentButton },
@@ -83,6 +86,8 @@ let mobileUiState = {
     controlsOpen: false,
     resultsOpen: false
 };
+let userDismissedVentMessage = false;
+let lastVentilationState = null;
 
 // Store selected ventilation rule for future calculations.
 let selectedVentilationRule = ventRuleSelect?.value || "1/150";
@@ -214,6 +219,76 @@ function formatSignedIn2(value) {
     return `${sign}${value.toFixed(1)} in² NFVA`;
 }
 
+function getVentilationState() {
+    const hasIntake = getPlacedIntakeVents().length > 0;
+    const hasExhaust =
+        getPlacedStaticVents().length > 0 ||
+        getPlacedRidgeVents().length > 0;
+
+    if (!hasIntake && !hasExhaust) {
+        return "none";
+    }
+
+    if (hasIntake && !hasExhaust) {
+        return "intake";
+    }
+
+    if (!hasIntake && hasExhaust) {
+        return "exhaust";
+    }
+
+    return "balanced";
+}
+
+function getVentilationMessage(state) {
+    if (state === "intake") {
+        return "Air is entering, but has nowhere to escape";
+    }
+
+    if (state === "exhaust") {
+        return "Air is escaping, but no fresh air is replacing it";
+    }
+
+    if (state === "balanced") {
+        return "Proper airflow established - air is entering and exiting efficiently";
+    }
+
+    return "Hot, stale air is trapped in the attic";
+}
+
+function updateVentStatusMessage({ forceReveal = false } = {}) {
+    const ventilationState = getVentilationState();
+    const ventilationMessage = getVentilationMessage(ventilationState);
+    const stateChanged = ventilationState !== lastVentilationState;
+
+    if (stateChanged || forceReveal) {
+        userDismissedVentMessage = false;
+    }
+
+    if (ventStatusMessage) {
+        ventStatusMessage.textContent = ventilationMessage;
+    }
+
+    if (ventStatusToast) {
+        const shouldShow = !userDismissedVentMessage;
+        ventStatusToast.classList.toggle("is-visible", shouldShow);
+        ventStatusToast.setAttribute("aria-hidden", shouldShow ? "false" : "true");
+    }
+
+    lastVentilationState = ventilationState;
+}
+
+function dismissVentStatusMessage() {
+    userDismissedVentMessage = true;
+
+    if (!ventStatusToast) {
+        return;
+    }
+
+    ventStatusToast.classList.remove("is-visible");
+    ventStatusToast.setAttribute("aria-hidden", "true");
+}
+
 function refreshResultsPanel() {
     const buildingWidth = Math.max(1, toNumber(houseWidthInput?.value, 30));
     const buildingLength = Math.max(1, toNumber(houseLengthInput?.value, 50));
@@ -317,6 +392,7 @@ function rebuildGeometryFromInputs() {
 function onGeometryInputChanged() {
     rebuildGeometryFromInputs();
     refreshResultsPanel();
+    updateVentStatusMessage();
 }
 
 function onVentRuleChanged() {
@@ -464,6 +540,7 @@ function onViewerClicked(event) {
 
     if (placed) {
         refreshResultsPanel();
+        updateVentStatusMessage();
     }
 
     pointerDownInfo = null;
@@ -513,6 +590,8 @@ function onStartSimulationClicked() {
     if (isMobilePanelMode()) {
         openResultsPanel();
     }
+
+    updateVentStatusMessage({ forceReveal: true });
 }
 
 function onResetClicked() {
@@ -527,6 +606,7 @@ function onResetClicked() {
     updateSimulationButtonUI();
     updatePlacementButtonUI();
     refreshResultsPanel();
+    updateVentStatusMessage({ forceReveal: true });
 
     if (isMobilePanelMode()) {
         openControlsPanel();
@@ -536,6 +616,7 @@ function onResetClicked() {
 // Build default geometry on load.
 rebuildGeometryFromInputs();
 refreshResultsPanel();
+updateVentStatusMessage({ forceReveal: true });
 
 houseWidthInput?.addEventListener("input", onGeometryInputChanged);
 houseLengthInput?.addEventListener("input", onGeometryInputChanged);
@@ -549,6 +630,7 @@ startSimulationButton?.addEventListener("click", onStartSimulationClicked);
 resetButton?.addEventListener("click", onResetClicked);
 controlsToggleButton?.addEventListener("click", toggleControlsPanel);
 resultsToggleButton?.addEventListener("click", toggleResultsPanel);
+ventStatusCloseButton?.addEventListener("click", dismissVentStatusMessage);
 
 renderer.domElement.addEventListener("pointerdown", onViewerPointerDown);
 renderer.domElement.addEventListener("pointerup", onViewerClicked);
