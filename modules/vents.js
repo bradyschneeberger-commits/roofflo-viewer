@@ -396,23 +396,24 @@ function updateVentPreview(pointerNdc, camera, placementMode) {
 		return;
 	}
 
-	if (placementMode === "static") {
-		if (!leftStaticPlacementLine || !rightStaticPlacementLine) {
+		if (placementMode === "static") {
+		if (!leftExhaustZone || !rightExhaustZone || !leftStaticPlacementLine || !rightStaticPlacementLine) {
 			hideVentPreview();
 			return;
 		}
 
-		const hits = raycaster.intersectObjects([leftStaticPlacementLine, rightStaticPlacementLine], false);
-		if (!hits.length) {
+		const zoneHits = raycaster.intersectObjects([leftExhaustZone, rightExhaustZone], false);
+		if (!zoneHits.length) {
 			hideVentPreview();
 			return;
 		}
 
-		const placementLine = hits[0].object;
-		const zone = placementLine.name === "leftStaticPlacementLine" ? leftExhaustZone : rightExhaustZone;
+		const zoneHit = zoneHits[0];
+		const zone = zoneHit.object;
+		const placementLine = zone.name === "leftExhaustZone" ? leftStaticPlacementLine : rightStaticPlacementLine;
 
 		const worldNormal = new THREE.Vector3(0, 1, 0);
-		if (zone && zone.geometry) {
+		if (zone.geometry) {
 			const positionAttr = zone.geometry.getAttribute("position");
 			const indexAttr = zone.geometry.index;
 
@@ -444,7 +445,7 @@ function updateVentPreview(pointerNdc, camera, placementMode) {
 			}
 		}
 
-		updateStaticPreview(hits[0].point, placementLine, worldNormal);
+		updateStaticPreview(zoneHit.point, placementLine, worldNormal);
 		return;
 	}
 

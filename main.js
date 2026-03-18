@@ -322,10 +322,17 @@ function updatePlacementButtonUI() {
         item.button.disabled = simulationState === SimulationState.RUNNING;
     }
 
-    // Update viewer cursor based on placement mode
     const viewer = renderer.domElement;
-    const isPlacementActive = activePlacementMode !== PlacementMode.NONE && simulationState !== SimulationState.RUNNING;
+    const isPlacementActive =
+        activePlacementMode !== PlacementMode.NONE &&
+        simulationState !== SimulationState.RUNNING;
+
     viewer.classList.toggle("placement-active", isPlacementActive);
+
+    // IMPORTANT:
+    // Disable orbit controls while placing vents so mobile taps
+    // are used for placement instead of camera drag/orbit.
+    controls.enabled = !isPlacementActive;
 }
 
 function setPlacementMode(mode) {
@@ -340,8 +347,24 @@ function setPlacementMode(mode) {
 
 function getPointerNdc(event) {
     const rect = renderer.domElement.getBoundingClientRect();
-    const x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-    const y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+    const clientX =
+        event.clientX ??
+        event.changedTouches?.[0]?.clientX ??
+        event.touches?.[0]?.clientX;
+
+    const clientY =
+        event.clientY ??
+        event.changedTouches?.[0]?.clientY ??
+        event.touches?.[0]?.clientY;
+
+    if (clientX == null || clientY == null) {
+        return null;
+    }
+
+    const x = ((clientX - rect.left) / rect.width) * 2 - 1;
+    const y = -((clientY - rect.top) / rect.height) * 2 + 1;
+
     return { x, y };
 }
 
@@ -350,11 +373,14 @@ function onViewerClicked(event) {
         return;
     }
 
-    const pointerNdc = getPointerNdc(event);
+    event.preventDefault();
+    event.stopPropagation();
 
-    // IMPORTANT:
-    // Refresh preview/snapped placement state on tap/click before placing.
-    // Desktop already gets this from pointermove, but mobile often does not.
+    const pointerNdc = getPointerNdc(event);
+    if (!pointerNdc) {
+        return;
+    }
+
     updateVentPreview(pointerNdc, camera, activePlacementMode);
 
     let placed = false;
@@ -379,6 +405,10 @@ function onViewerPointerMove(event) {
     }
 
     const pointerNdc = getPointerNdc(event);
+    if (!pointerNdc) {
+        return;
+    }
+
     updateVentPreview(pointerNdc, camera, activePlacementMode);
 }
 
@@ -446,7 +476,7 @@ startSimulationButton?.addEventListener("click", onStartSimulationClicked);
 resetButton?.addEventListener("click", onResetClicked);
 controlsToggleButton?.addEventListener("click", toggleControlsPanel);
 resultsToggleButton?.addEventListener("click", toggleResultsPanel);
-renderer.domElement.addEventListener("pointerdown", onViewerClicked);
+renderer.domElement.addEventListener("pointerup", onViewerClicked);
 renderer.domElement.addEventListener("pointermove", onViewerPointerMove);
 renderer.domElement.addEventListener("pointerleave", onViewerPointerLeave);
 window.addEventListener("resize", syncResponsiveUiState);
