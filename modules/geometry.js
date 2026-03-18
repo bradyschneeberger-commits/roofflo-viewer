@@ -45,6 +45,7 @@ import { scene } from "./scene.js";
 
 // Geometry references
 let atticSystem = null;
+let buildingFootprintBase = null;
 let roofEnvelope = null;
 let atticCore = null;
 let leftPlenum = null;
@@ -82,10 +83,66 @@ function createAtticGeometry({
         scene.remove(atticSystem);
     }
 
+    // Remove old visual-only building footprint base if it exists
+    if (buildingFootprintBase) {
+        scene.remove(buildingFootprintBase);
+        if (buildingFootprintBase.geometry) {
+            buildingFootprintBase.geometry.dispose();
+        }
+        if (buildingFootprintBase.material) {
+            if (Array.isArray(buildingFootprintBase.material)) {
+                for (const material of buildingFootprintBase.material) {
+                    material.dispose();
+                }
+            } else {
+                buildingFootprintBase.material.dispose();
+            }
+        }
+        buildingFootprintBase = null;
+    }
+
     // Create new group
     atticSystem = new THREE.Group();
     atticSystem.name = "atticSystem";
     scene.add(atticSystem);
+
+    // --------------------------------------------------
+    // Visual-only footprint/base below attic system
+    // --------------------------------------------------
+    const baseHeight = 1.75;
+    const baseTopY = -0.08;
+    const baseSideMaterial = new THREE.MeshStandardMaterial({
+        color: 0x9a9a9a,
+        transparent: true,
+        opacity: 0.85,
+        roughness: 0.88,
+        metalness: 0
+    });
+    const baseTopMaterial = new THREE.MeshStandardMaterial({
+        color: 0xb0b0b0,
+        transparent: true,
+        opacity: 0.85,
+        roughness: 0.82,
+        metalness: 0
+    });
+
+    buildingFootprintBase = new THREE.Mesh(
+        new THREE.BoxGeometry(buildingWidth, baseHeight, buildingLength),
+        [
+            baseSideMaterial,
+            baseSideMaterial,
+            baseTopMaterial,
+            baseSideMaterial,
+            baseSideMaterial,
+            baseSideMaterial
+        ]
+    );
+    buildingFootprintBase.name = "buildingFootprintBase";
+    buildingFootprintBase.position.set(0, baseTopY - (baseHeight / 2), 0);
+    buildingFootprintBase.castShadow = false;
+    buildingFootprintBase.receiveShadow = true;
+    buildingFootprintBase.userData.isVisualOnly = true;
+    scene.add(buildingFootprintBase);
 
     // Calculations
     const pitchRun = 12;
@@ -346,6 +403,7 @@ function createAtticGeometry({
 
     return {
         atticSystem,
+        buildingFootprintBase,
         roofEnvelope,
         atticCore,
         leftPlenum,
@@ -366,6 +424,7 @@ function createAtticGeometry({
 function getGeometryState() {
     return {
         atticSystem,
+        buildingFootprintBase,
         roofEnvelope,
         atticCore,
         leftPlenum,
@@ -386,6 +445,7 @@ export {
     createAtticGeometry,
     getGeometryState,
     atticSystem,
+    buildingFootprintBase,
     roofEnvelope,
     atticCore,
     leftPlenum,

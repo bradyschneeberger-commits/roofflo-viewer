@@ -15,6 +15,7 @@ import {
     hideVentPreview,
     clearVentPreview,
     exportCurrentVentLayout,
+    restoreVentLayout,
     generateIntakeOnlyPreset,
     generateExhaustOnlyPreset,
     generateBalancedPreset,
@@ -77,6 +78,7 @@ const ventStatusToast = document.getElementById("vent-status-toast");
 const ventStatusMessage = document.getElementById("vent-status-message");
 const ventStatusCloseButton = document.getElementById("vent-status-close");
 const toolbarSaveCurrentButton = document.getElementById("btn-toolbar-save-current");
+const toolbarRestoreCurrentButton = document.getElementById("btn-toolbar-restore-current");
 const toolbarIntakeOnlyButton = document.getElementById("btn-toolbar-intake-only");
 const toolbarExhaustOnlyButton = document.getElementById("btn-toolbar-exhaust-only");
 const toolbarBalancedButton = document.getElementById("btn-toolbar-balanced");
@@ -98,6 +100,7 @@ let mobileUiState = {
 let userDismissedVentMessage = false;
 let lastVentStatusKey = null;
 let savedVentLayout = null;
+let transientStatusTimer = null;
 
 // Store selected ventilation rule for future calculations.
 let selectedVentilationRule = ventRuleSelect?.value || "1/150";
@@ -358,6 +361,41 @@ function dismissVentStatusMessage() {
 
     ventStatusToast.classList.remove("is-visible");
     ventStatusToast.setAttribute("aria-hidden", "true");
+}
+
+function setRestoreAvailabilityUI() {
+    if (!toolbarRestoreCurrentButton) {
+        return;
+    }
+
+    toolbarRestoreCurrentButton.disabled = !savedVentLayout;
+
+    if (toolbarSaveCurrentButton) {
+        toolbarSaveCurrentButton.classList.toggle("is-saved", Boolean(savedVentLayout));
+    }
+}
+
+function showTemporaryStatusMessage(message, state = "info", durationMs = 1400) {
+    if (!ventStatusToast || !ventStatusMessage) {
+        return;
+    }
+
+    if (transientStatusTimer) {
+        window.clearTimeout(transientStatusTimer);
+        transientStatusTimer = null;
+    }
+
+    userDismissedVentMessage = false;
+    ventStatusMessage.textContent = message;
+    ventStatusToast.classList.remove("is-danger", "is-warning", "is-info", "is-success");
+    ventStatusToast.classList.add(`is-${state}`);
+    ventStatusToast.classList.add("is-visible");
+    ventStatusToast.setAttribute("aria-hidden", "false");
+
+    transientStatusTimer = window.setTimeout(() => {
+        transientStatusTimer = null;
+        updateVentStatusMessage({ forceReveal: true });
+    }, durationMs);
 }
 
 function refreshResultsPanel() {
@@ -717,6 +755,8 @@ function applyToolbarPreset(generator) {
 
 function onSaveCurrentLayoutClicked() {
     savedVentLayout = exportCurrentVentLayout();
+    setRestoreAvailabilityUI();
+    showTemporaryStatusMessage("Current layout saved", "success", 1250);
 
     if (!toolbarSaveCurrentButton) {
         return;
@@ -727,6 +767,39 @@ function onSaveCurrentLayoutClicked() {
     window.setTimeout(() => {
         toolbarSaveCurrentButton.textContent = originalText || "Save Current";
     }, 1200);
+}
+
+function onRestoreCurrentLayoutClicked() {
+    if (!savedVentLayout) {
+        showTemporaryStatusMessage("No saved layout available", "warning", 1400);
+        return;
+    }
+
+    if (isSimulationRunning()) {
+        resetAirflowSimulation();
+    }
+
+    simulationState = SimulationState.IDLE;
+    activePlacementMode = PlacementMode.NONE;
+    pointerDownInfo = null;
+    cancelPendingRidgePlacement();
+    hideVentPreview();
+
+    const restored = restoreVentLayout(savedVentLayout);
+    if (!restored) {
+        showTemporaryStatusMessage("Unable to restore saved layout", "warning", 1600);
+        return;
+    }
+
+    updateSimulationButtonUI();
+    updatePlacementButtonUI();
+    refreshResultsPanel();
+    updateVentStatusMessage({ forceReveal: true });
+    showTemporaryStatusMessage("Saved layout restored", "info", 1200);
+
+    if (isMobilePanelMode()) {
+        openResultsPanel();
+    }
 }
 
 // Build default geometry on load.
@@ -746,6 +819,7 @@ controlsToggleButton?.addEventListener("click", toggleControlsPanel);
 resultsToggleButton?.addEventListener("click", toggleResultsPanel);
 ventStatusCloseButton?.addEventListener("click", dismissVentStatusMessage);
 toolbarSaveCurrentButton?.addEventListener("click", onSaveCurrentLayoutClicked);
+toolbarRestoreCurrentButton?.addEventListener("click", onRestoreCurrentLayoutClicked);
 toolbarIntakeOnlyButton?.addEventListener("click", () => applyToolbarPreset(generateIntakeOnlyPreset));
 toolbarExhaustOnlyButton?.addEventListener("click", () => applyToolbarPreset(generateExhaustOnlyPreset));
 toolbarBalancedButton?.addEventListener("click", () => applyToolbarPreset(() => generateBalancedPreset({ ventilationRule: selectedVentilationRule })));
@@ -762,6 +836,7 @@ window.addEventListener("resize", syncResponsiveUiState);
 updateSimulationButtonUI();
 updatePlacementButtonUI();
 syncResponsiveUiState();
+setRestoreAvailabilityUI();
 
 let lastAnimationTime = performance.now();
 

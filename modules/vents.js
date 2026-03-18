@@ -1119,6 +1119,7 @@ function getRoundedRidgeLengthCandidates(targetLength, maxLength, step = 0.5) {
 
 function exportCurrentVentLayout() {
 	return {
+		version: 1,
 		intake: intakeVents.map((vent) => ({
 			side: vent.side,
 			z: vent.position.z
@@ -1139,6 +1140,10 @@ function restoreVentLayout(layout) {
 		return false;
 	}
 
+	const intakeEntries = Array.isArray(layout.intake) ? layout.intake : [];
+	const staticEntries = Array.isArray(layout.static) ? layout.static : [];
+	const ridgeEntries = Array.isArray(layout.ridge) ? layout.ridge : [];
+
 	const {
 		leftIntakePlacement,
 		rightIntakePlacement,
@@ -1155,20 +1160,32 @@ function restoreVentLayout(layout) {
 
 	clearAllVents();
 
-	for (const intake of layout.intake || []) {
+	for (const intake of intakeEntries) {
+		if (!Number.isFinite(Number(intake?.z))) {
+			continue;
+		}
+
 		const line = intake.side === "left" ? leftIntakePlacement : rightIntakePlacement;
 		placeIntakeVentAt(line, Number(intake.z));
 	}
 
-	for (const exhaust of layout.static || []) {
+	for (const exhaust of staticEntries) {
+		if (!Number.isFinite(Number(exhaust?.z))) {
+			continue;
+		}
+
 		const line = exhaust.side === "left" ? leftStaticPlacementLine : rightStaticPlacementLine;
 		const zone = exhaust.side === "left" ? leftExhaustZone : rightExhaustZone;
 		placeStaticVentAt(line, zone, Number(exhaust.z));
 	}
 
 	const ridgeBounds = getLineZBounds(ridgeCenterLine);
-	for (const ridge of layout.ridge || []) {
+	for (const ridge of ridgeEntries) {
 		if (!ridgeBounds) {
+			continue;
+		}
+
+		if (!Number.isFinite(Number(ridge?.start?.z)) || !Number.isFinite(Number(ridge?.end?.z))) {
 			continue;
 		}
 
