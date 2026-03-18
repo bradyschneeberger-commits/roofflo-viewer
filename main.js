@@ -86,6 +86,10 @@ let mobileUiState = {
 // Store selected ventilation rule for future calculations.
 let selectedVentilationRule = ventRuleSelect?.value || "1/150";
 
+// Tap-vs-drag tracking for mobile-safe placement
+let pointerDownInfo = null;
+const TAP_MOVE_THRESHOLD = 10;
+
 function toNumber(value, fallback) {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : fallback;
@@ -329,10 +333,9 @@ function updatePlacementButtonUI() {
 
     viewer.classList.toggle("placement-active", isPlacementActive);
 
-    // IMPORTANT:
-    // Disable orbit controls while placing vents so mobile taps
-    // are used for placement instead of camera drag/orbit.
-    controls.enabled = !isPlacementActive;
+    // Keep camera controls available even while a placement mode is active.
+    // Tap-vs-drag detection below prevents accidental placement during orbit.
+    controls.enabled = true;
 }
 
 function setPlacementMode(mode) {
@@ -368,8 +371,62 @@ function getPointerNdc(event) {
     return { x, y };
 }
 
+function onViewerPointerDown(event) {
+    const clientX =
+        event.clientX ??
+        event.changedTouches?.[0]?.clientX ??
+        event.touches?.[0]?.clientX;
+
+    const clientY =
+        event.clientY ??
+        event.changedTouches?.[0]?.clientY ??
+        event.touches?.[0]?.clientY;
+
+    if (clientX == null || clientY == null) {
+        pointerDownInfo = null;
+        return;
+    }
+
+    pointerDownInfo = {
+        x: clientX,
+        y: clientY
+    };
+}
+
+function isTapInteraction(event) {
+    if (!pointerDownInfo) {
+        return false;
+    }
+
+    const clientX =
+        event.clientX ??
+        event.changedTouches?.[0]?.clientX ??
+        event.touches?.[0]?.clientX;
+
+    const clientY =
+        event.clientY ??
+        event.changedTouches?.[0]?.clientY ??
+        event.touches?.[0]?.clientY;
+
+    if (clientX == null || clientY == null) {
+        return false;
+    }
+
+    const deltaX = clientX - pointerDownInfo.x;
+    const deltaY = clientY - pointerDownInfo.y;
+    const distance = Math.hypot(deltaX, deltaY);
+
+    return distance <= TAP_MOVE_THRESHOLD;
+}
+
 function onViewerClicked(event) {
     if (simulationState === SimulationState.RUNNING || activePlacementMode === PlacementMode.NONE) {
+        pointerDownInfo = null;
+        return;
+    }
+
+    if (!isTapInteraction(event)) {
+        pointerDownInfo = null;
         return;
     }
 
@@ -378,9 +435,11 @@ function onViewerClicked(event) {
 
     const pointerNdc = getPointerNdc(event);
     if (!pointerNdc) {
+        pointerDownInfo = null;
         return;
     }
 
+    // Refresh preview/snapped state on tap before placement.
     updateVentPreview(pointerNdc, camera, activePlacementMode);
 
     let placed = false;
@@ -396,6 +455,8 @@ function onViewerClicked(event) {
     if (placed) {
         refreshResultsPanel();
     }
+
+    pointerDownInfo = null;
 }
 
 function onViewerPointerMove(event) {
@@ -412,8 +473,9 @@ function onViewerPointerMove(event) {
     updateVentPreview(pointerNdc, camera, activePlacementMode);
 }
 
-function onViewerPointerLeave(event) {
+function onViewerPointerLeave() {
     hideVentPreview();
+    pointerDownInfo = null;
 }
 
 function onStartSimulationClicked() {
@@ -449,6 +511,7 @@ function onResetClicked() {
     clearAllVents();
     hideVentPreview();
     activePlacementMode = PlacementMode.NONE;
+    pointerDownInfo = null;
 
     simulationState = SimulationState.IDLE;
     updateSimulationButtonUI();
@@ -476,9 +539,12 @@ startSimulationButton?.addEventListener("click", onStartSimulationClicked);
 resetButton?.addEventListener("click", onResetClicked);
 controlsToggleButton?.addEventListener("click", toggleControlsPanel);
 resultsToggleButton?.addEventListener("click", toggleResultsPanel);
+
+renderer.domElement.addEventListener("pointerdown", onViewerPointerDown);
 renderer.domElement.addEventListener("pointerup", onViewerClicked);
 renderer.domElement.addEventListener("pointermove", onViewerPointerMove);
 renderer.domElement.addEventListener("pointerleave", onViewerPointerLeave);
+
 window.addEventListener("resize", syncResponsiveUiState);
 
 updateSimulationButtonUI();
