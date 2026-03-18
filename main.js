@@ -87,7 +87,7 @@ let mobileUiState = {
     resultsOpen: false
 };
 let userDismissedVentMessage = false;
-let lastVentilationState = null;
+let lastVentStatusKey = null;
 
 // Store selected ventilation rule for future calculations.
 let selectedVentilationRule = ventRuleSelect?.value || "1/150";
@@ -219,6 +219,31 @@ function formatSignedIn2(value) {
     return `${sign}${value.toFixed(1)} in² NFVA`;
 }
 
+function getCurrentVentilationStatus() {
+    const buildingWidth = Math.max(1, toNumber(houseWidthInput?.value, 30));
+    const buildingLength = Math.max(1, toNumber(houseLengthInput?.value, 50));
+    const ventilationRule = selectedVentilationRule || "1/150";
+    const atticAreaSqFt = calculateAtticArea(buildingWidth, buildingLength);
+    const requiredVentIn2 = calculateRequiredVentilation(atticAreaSqFt, ventilationRule);
+    const requiredIntakeIn2 = calculateRequiredIntake(requiredVentIn2);
+    const requiredExhaustIn2 = calculateRequiredExhaust(requiredVentIn2);
+
+    const ventSummary = getVentSummary();
+    const installed = calculateInstalledVentilation({
+        intakeCount: ventSummary.intakeCount,
+        staticCount: ventSummary.staticCount,
+        ridgeLengthFeet: ventSummary.ridgeLengthFeet
+    });
+
+    return calculateVentilationStatus({
+        requiredTotal: requiredVentIn2,
+        requiredIntake: requiredIntakeIn2,
+        requiredExhaust: requiredExhaustIn2,
+        installedIntake: installed.installedIntakeIn2,
+        installedExhaust: installed.installedExhaustIn2
+    });
+}
+
 function getVentilationState() {
     const hasIntake = getPlacedIntakeVents().length > 0;
     const hasExhaust =
@@ -240,42 +265,72 @@ function getVentilationState() {
     return "balanced";
 }
 
-function getVentilationMessage(state) {
-    if (state === "intake") {
-        return "Air is entering, but has nowhere to escape";
+function getVentilationMessageData() {
+    const ventilationState = getVentilationState();
+
+    if (ventilationState === "none") {
+        return {
+            message: "Hot, stale air is trapped in the attic",
+            state: "danger",
+            key: "none:danger"
+        };
     }
 
-    if (state === "exhaust") {
-        return "Air is escaping, but no fresh air is replacing it";
+    if (ventilationState === "intake") {
+        return {
+            message: "Air is entering, but has nowhere to escape",
+            state: "warning",
+            key: "intake:warning"
+        };
     }
 
-    if (state === "balanced") {
-        return "Proper airflow established - air is entering and exiting efficiently";
+    if (ventilationState === "exhaust") {
+        return {
+            message: "Air is escaping, but no fresh air is replacing it",
+            state: "warning",
+            key: "exhaust:warning"
+        };
     }
 
-    return "Hot, stale air is trapped in the attic";
+    const ventilationStatus = getCurrentVentilationStatus();
+
+    if (ventilationStatus === "Balanced") {
+        return {
+            message: "Proper airflow established - air is entering and exiting efficiently",
+            state: "success",
+            key: `balanced:${ventilationStatus}`
+        };
+    }
+
+    return {
+        message: "Air is moving through the attic, but the system is not yet balanced",
+        state: "info",
+        key: `balanced:${ventilationStatus}`
+    };
 }
 
 function updateVentStatusMessage({ forceReveal = false } = {}) {
-    const ventilationState = getVentilationState();
-    const ventilationMessage = getVentilationMessage(ventilationState);
-    const stateChanged = ventilationState !== lastVentilationState;
+    const messageData = getVentilationMessageData();
+    const stateChanged = messageData.key !== lastVentStatusKey;
 
     if (stateChanged || forceReveal) {
         userDismissedVentMessage = false;
     }
 
     if (ventStatusMessage) {
-        ventStatusMessage.textContent = ventilationMessage;
+        ventStatusMessage.textContent = messageData.message;
     }
 
     if (ventStatusToast) {
+        ventStatusToast.classList.remove("is-danger", "is-warning", "is-info", "is-success");
+        ventStatusToast.classList.add(`is-${messageData.state}`);
+
         const shouldShow = !userDismissedVentMessage;
         ventStatusToast.classList.toggle("is-visible", shouldShow);
         ventStatusToast.setAttribute("aria-hidden", shouldShow ? "false" : "true");
     }
 
-    lastVentilationState = ventilationState;
+    lastVentStatusKey = messageData.key;
 }
 
 function dismissVentStatusMessage() {
@@ -398,6 +453,7 @@ function onGeometryInputChanged() {
 function onVentRuleChanged() {
     selectedVentilationRule = ventRuleSelect?.value || "1/150";
     refreshResultsPanel();
+    updateVentStatusMessage();
 }
 
 function updatePlacementButtonUI() {

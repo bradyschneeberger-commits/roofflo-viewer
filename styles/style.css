@@ -30,6 +30,14 @@
 	--toast-bg: rgba(15, 23, 42, 0.72);
 	--toast-border: rgba(255, 255, 255, 0.18);
 	--toast-text: #f8fafc;
+	--toast-danger-bg: rgba(127, 29, 29, 0.24);
+	--toast-danger-border: rgba(248, 113, 113, 0.42);
+	--toast-warning-bg: rgba(120, 53, 15, 0.24);
+	--toast-warning-border: rgba(251, 191, 36, 0.44);
+	--toast-info-bg: rgba(30, 64, 175, 0.22);
+	--toast-info-border: rgba(96, 165, 250, 0.42);
+	--toast-success-bg: rgba(20, 83, 45, 0.24);
+	--toast-success-border: rgba(74, 222, 128, 0.42);
 }
 
 html,
@@ -90,6 +98,26 @@ body {
 	opacity: 1;
 	pointer-events: auto;
 	transform: translate(-50%, 0);
+}
+
+.vent-status-toast.is-danger {
+	background: var(--toast-danger-bg);
+	border-color: var(--toast-danger-border);
+}
+
+.vent-status-toast.is-warning {
+	background: var(--toast-warning-bg);
+	border-color: var(--toast-warning-border);
+}
+
+.vent-status-toast.is-info {
+	background: var(--toast-info-bg);
+	border-color: var(--toast-info-border);
+}
+
+.vent-status-toast.is-success {
+	background: var(--toast-success-bg);
+	border-color: var(--toast-success-border);
 }
 
 #vent-status-message {
