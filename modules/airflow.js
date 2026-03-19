@@ -32,6 +32,13 @@ updateAirflow()
 */
 
 import * as THREE from "three";
+import {
+  calculateAtticArea,
+  calculateRequiredVentilation,
+  calculateRequiredIntake,
+  calculateRequiredExhaust,
+  calculateInstalledVentilation
+} from "./calculations.js";
 
 const STALE_AIR_COLOR = 0xffa500;
 const FRESH_AIR_COLOR = 0x66ccff;
@@ -58,10 +65,30 @@ const STALE_REPLENISH_INTERVAL_SECONDS = 0.12;
 const MAX_STALE_REPLENISH_PER_TICK = 4;
 const STATIC_VENT_SIZE_FEET = 0.75;
 const RIDGE_VENT_WIDTH_FEET = 2 / 12;
+const TRAIL_HISTORY_LENGTH = 4;
+const TRAIL_MIN_POINT_DISTANCE = 0.045;
+const TRAIL_MIN_POINT_DISTANCE_SQ = TRAIL_MIN_POINT_DISTANCE * TRAIL_MIN_POINT_DISTANCE;
+const TRAIL_SPEED_VISIBILITY_MIN = 0.08;
+const TRAIL_SPEED_VISIBILITY_MAX = 1.15;
+const TRAIL_SPEED_VISIBILITY_MIN_SQ = TRAIL_SPEED_VISIBILITY_MIN * TRAIL_SPEED_VISIBILITY_MIN;
+const TRAIL_SPEED_VISIBILITY_MAX_SQ = TRAIL_SPEED_VISIBILITY_MAX * TRAIL_SPEED_VISIBILITY_MAX;
+const TRAIL_BASE_OPACITY = 0.34;
+const TRAIL_SETUP_OPACITY_MUL = 0.16;
+const TRAIL_OPACITY_UPDATE_DELTA = 0.012;
+const RIDGE_EXIT_RAMP_SPEED = 1.45;
+const RIDGE_EXIT_MAX_LATERAL_FORCE = 0.018;
+const RIDGE_EXIT_UPWARD_RETENTION = 0.992;
+const RIDGE_EXIT_MIN_UPWARD_LIFT = 0.028;
+const RIDGE_EXIT_FADE_DELAY = 0.35;
+const RIDGE_EXIT_EXTRA_FADE_DELAY = 0.45;
+const RIDGE_EXIT_EXTRA_LIFE = 0.75;
+const RIDGE_EXIT_EXTRA_REMOVAL_DISTANCE = 0.45;
 
 const PARTICLE_GEOMETRY = new THREE.SphereGeometry(1, 8, 8);
 const STALE_AIR_TINT = new THREE.Color(STALE_AIR_COLOR);
 const FRESH_AIR_TINT = new THREE.Color(FRESH_AIR_COLOR);
+const PARTICLE_COLOR_TEMP = new THREE.Color();
+const TRAIL_COLOR_TEMP = new THREE.Color();
 
 const PHASE_VISUALS = {
   intake: {
@@ -82,8 +109,13 @@ const PHASE_VISUALS = {
 };
 
 const UP = new THREE.Vector3(0, 1, 0);
+const TEMP_VEC_1 = new THREE.Vector3();
+const TEMP_VEC_2 = new THREE.Vector3();
+const TEMP_VEC_3 = new THREE.Vector3();
+const TEMP_VEC_4 = new THREE.Vector3();
 
 let airflowGroup = null;
+let airflowTrailGroup = null;
 let simulationRunning = false;
 let spawnAccumulator = 0;
 let editFreshSpawnAccumulator = 0;
@@ -111,6 +143,12 @@ function ensureAirflowGroup() {
     airflowGroup = new THREE.Group();
     airflowGroup.name = "airflowGroup";
     sceneRef.add(airflowGroup);
+  }
+
+  if (!airflowTrailGroup) {
+    airflowTrailGroup = new THREE.Group();
+    airflowTrailGroup.name = "airflowTrailGroup";
+    airflowGroup.add(airflowTrailGroup);
   }
 }
 
@@ -158,6 +196,8 @@ function stopAirflowSimulation() {
 }
 
 function disposeParticle(particle, index) {
+  disposeParticleTrail(particle);
+
   if (particle.mesh && airflowGroup) {
     airflowGroup.remove(particle.mesh);
     particle.mesh.geometry.dispose();
@@ -200,6 +240,160 @@ function createParticleMesh(position) {
   return mesh;
 }
 
+function createParticleTrail(position) {
+  if (!airflowTrailGroup) {
+    return null;
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  const positions = new Float32Array(TRAIL_HISTORY_LENGTH * 3);
+  const colors = new Float32Array(TRAIL_HISTORY_LENGTH * 3);
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+  geometry.setDrawRange(0, 0);
+
+  const material = new THREE.LineBasicMaterial({
+    transparent: true,
+    opacity: 0,
+    vertexColors: true,
+    depthWrite: false,
+    depthTest: false,
+    blending: THREE.NormalBlending
+  });
+
+  const mesh = new THREE.Line(geometry, material);
+  mesh.renderOrder = 90;
+  mesh.frustumCulled = false;
+  airflowTrailGroup.add(mesh);
+
+  const history = new Float32Array(TRAIL_HISTORY_LENGTH * 3);
+  for (let i = 0; i < TRAIL_HISTORY_LENGTH; i += 1) {
+    const index = i * 3;
+    history[index] = position.x;
+    history[index + 1] = position.y;
+    history[index + 2] = position.z;
+  }
+
+  return {
+    mesh,
+    positionAttr: geometry.getAttribute("position"),
+    colorAttr: geometry.getAttribute("color"),
+    history,
+    historyHead: 0,
+    visibleCount: 1,
+    lastX: position.x,
+    lastY: position.y,
+    lastZ: position.z,
+    lastOpacity: 0,
+    dirty: true
+  };
+}
+
+function disposeParticleTrail(particle) {
+  if (!particle?.trail?.mesh || !airflowTrailGroup) {
+    return;
+  }
+
+  airflowTrailGroup.remove(particle.trail.mesh);
+  particle.trail.mesh.geometry.dispose();
+  particle.trail.mesh.material.dispose();
+  particle.trail = null;
+}
+
+function getParticleColor(targetColor, particle) {
+  const freshness = THREE.MathUtils.clamp(
+    particle.freshness ?? (particle.type === "fresh" ? 1 : 0),
+    0,
+    1
+  );
+  return targetColor.copy(STALE_AIR_TINT).lerp(FRESH_AIR_TINT, freshness);
+}
+
+function recordTrailPoint(particle) {
+  if (!particle?.trail) {
+    return;
+  }
+
+  const trail = particle.trail;
+  const dx = particle.position.x - trail.lastX;
+  const dy = particle.position.y - trail.lastY;
+  const dz = particle.position.z - trail.lastZ;
+  const distanceSq = (dx * dx) + (dy * dy) + (dz * dz);
+  if (distanceSq < TRAIL_MIN_POINT_DISTANCE_SQ) {
+    return;
+  }
+
+  trail.historyHead = (trail.historyHead + TRAIL_HISTORY_LENGTH - 1) % TRAIL_HISTORY_LENGTH;
+  const writeIndex = trail.historyHead * 3;
+  trail.history[writeIndex] = particle.position.x;
+  trail.history[writeIndex + 1] = particle.position.y;
+  trail.history[writeIndex + 2] = particle.position.z;
+  trail.visibleCount = Math.min(TRAIL_HISTORY_LENGTH, trail.visibleCount + 1);
+  trail.lastX = particle.position.x;
+  trail.lastY = particle.position.y;
+  trail.lastZ = particle.position.z;
+  trail.dirty = true;
+}
+
+function updateParticleTrail(particle) {
+  if (!particle?.trail?.mesh) {
+    return;
+  }
+
+  const trail = particle.trail;
+  const speedSq = particle.velocity.lengthSq();
+  const speedFactor = THREE.MathUtils.clamp(
+    (speedSq - TRAIL_SPEED_VISIBILITY_MIN_SQ) / (TRAIL_SPEED_VISIBILITY_MAX_SQ - TRAIL_SPEED_VISIBILITY_MIN_SQ),
+    0,
+    1
+  );
+  const phaseMul = particle.phase === "exhaust" ? 1 : (particle.phase === "intake" ? 0.92 : 0.78);
+  const runningMul = simulationRunning ? 1 : TRAIL_SETUP_OPACITY_MUL;
+  const trailOpacity = (particle.mesh.material.opacity || 0) * TRAIL_BASE_OPACITY * phaseMul * runningMul * speedFactor;
+
+  if (trailOpacity <= 0.01 || trail.visibleCount < 2) {
+    trail.mesh.visible = false;
+    trail.mesh.geometry.setDrawRange(0, 0);
+    trail.lastOpacity = 0;
+    return;
+  }
+
+  trail.mesh.visible = true;
+  trail.mesh.material.opacity = trailOpacity;
+
+  const opacityChanged = Math.abs(trailOpacity - trail.lastOpacity) > TRAIL_OPACITY_UPDATE_DELTA;
+  if (!trail.dirty && !opacityChanged) {
+    return;
+  }
+
+  const baseColor = getParticleColor(TRAIL_COLOR_TEMP, particle);
+  const positions = trail.positionAttr;
+  const colors = trail.colorAttr;
+  const drawCount = trail.visibleCount;
+  const positionsArray = positions.array;
+  const colorsArray = colors.array;
+
+  for (let i = 0; i < drawCount; i += 1) {
+    const sourceIndex = ((trail.historyHead + i) % TRAIL_HISTORY_LENGTH) * 3;
+    const targetIndex = i * 3;
+    positionsArray[targetIndex] = trail.history[sourceIndex];
+    positionsArray[targetIndex + 1] = trail.history[sourceIndex + 1];
+    positionsArray[targetIndex + 2] = trail.history[sourceIndex + 2];
+
+    const fade = 1 - (i / Math.max(drawCount, 1));
+    const colorScale = 0.2 + (fade * 0.8);
+    colorsArray[targetIndex] = baseColor.r * colorScale;
+    colorsArray[targetIndex + 1] = baseColor.g * colorScale;
+    colorsArray[targetIndex + 2] = baseColor.b * colorScale;
+  }
+
+  trail.mesh.geometry.setDrawRange(0, drawCount);
+  positions.needsUpdate = true;
+  colors.needsUpdate = true;
+  trail.lastOpacity = trailOpacity;
+  trail.dirty = false;
+}
+
 function applyParticleVisuals(particle) {
   const phaseVisual = PHASE_VISUALS[particle.phase] || PHASE_VISUALS.attic;
   const fadeIn = THREE.MathUtils.clamp(particle.age / SPAWN_FADE_IN_SECONDS, 0, 1);
@@ -207,7 +401,15 @@ function applyParticleVisuals(particle) {
 
   let exhaustFade = 1;
   if (particle.phase === "exhaust") {
-    exhaustFade = THREE.MathUtils.clamp(1 - (particle.exhaustAge / EXHAUST_FADE_OUT_SECONDS), 0, 1);
+    const fadeDelay = Math.max(0, particle.exhaustFadeDelay || 0);
+    const fadeDuration = Math.max(0.001, particle.exhaustFadeDuration || EXHAUST_FADE_OUT_SECONDS);
+    const shouldFade = particle.exhaustKind === "ridge"
+      ? shouldBeginRidgeFade(particle)
+      : particle.exhaustAge >= fadeDelay;
+    const fadeProgress = shouldFade
+      ? Math.max(0, particle.exhaustAge - fadeDelay) / fadeDuration
+      : 0;
+    exhaustFade = THREE.MathUtils.clamp(1 - fadeProgress, 0, 1);
   }
 
   const lifeAlpha = fadeIn * exhaustFade;
@@ -215,12 +417,7 @@ function applyParticleVisuals(particle) {
 
   particle.mesh.material.opacity = targetOpacity;
 
-  const freshness = THREE.MathUtils.clamp(
-    particle.freshness ?? (particle.type === "fresh" ? 1 : 0),
-    0,
-    1
-  );
-  const targetColor = STALE_AIR_TINT.clone().lerp(FRESH_AIR_TINT, freshness);
+  const targetColor = getParticleColor(PARTICLE_COLOR_TEMP, particle);
   particle.mesh.material.color.lerp(targetColor, 0.2);
 
   const targetScale = particle.baseSize * phaseVisual.scaleMul * pulse;
@@ -394,6 +591,113 @@ function getExhaustSpreadForTarget(target) {
   return { direction: new THREE.Vector3(0, 0, 0), strength: 0 };
 }
 
+function getRidgeFlowAxes(vent) {
+  const segment = vent.end.clone().sub(vent.start);
+  const segmentLength = segment.length();
+  const alongAxis = segmentLength > 0.00001
+    ? segment.divideScalar(segmentLength)
+    : new THREE.Vector3(0, 0, 1);
+
+  let acrossAxis = new THREE.Vector3().crossVectors(UP, alongAxis).normalize();
+  if (!Number.isFinite(acrossAxis.x) || !Number.isFinite(acrossAxis.y) || !Number.isFinite(acrossAxis.z) || acrossAxis.lengthSq() <= 0.00001) {
+    acrossAxis = new THREE.Vector3(1, 0, 0);
+  }
+
+  return { alongAxis, acrossAxis };
+}
+
+function applyRidgeDeflection(particle, target) {
+  if (!target?.vent) {
+    return null;
+  }
+
+  const { alongAxis, acrossAxis } = getRidgeFlowAxes(target.vent);
+  const fromRidge = particle.position.clone().sub(target.position);
+  const sideDot = fromRidge.dot(acrossAxis);
+  let sideSign = sideDot >= 0 ? 1 : -1;
+  if (Math.abs(sideDot) < 0.02) {
+    sideSign = Math.random() > 0.5 ? 1 : -1;
+  }
+
+  const outward = acrossAxis.clone().multiplyScalar(sideSign);
+  const slopeDirection = outward.clone().multiplyScalar(0.96).add(UP.clone().multiplyScalar(0.24)).normalize();
+  const ridgeZoneInfluence = 1 - THREE.MathUtils.clamp(Math.abs(sideDot) / 0.9, 0, 1);
+
+  return {
+    sideSign,
+    outward,
+    slopeDirection,
+    alongAxis,
+    ridgeZoneInfluence
+  };
+}
+
+function applyRidgeApproachLift(desired, particle, nearestTarget, distance, flowProfile) {
+  if (nearestTarget?.kind !== "ridge") {
+    return;
+  }
+
+  const approachRange = 1.6;
+  const approach = 1 - THREE.MathUtils.clamp(distance / approachRange, 0, 1);
+  if (approach <= 0.0001) {
+    return;
+  }
+
+  const toRidge = nearestTarget.position.clone().sub(particle.position);
+  const horizontalTowardRidge = toRidge.setY(0);
+  if (horizontalTowardRidge.lengthSq() > 0.00001) {
+    horizontalTowardRidge.normalize();
+  }
+
+  desired.add(new THREE.Vector3(0, (0.14 + (flowProfile.directionalStrength * 0.24)) * approach, 0));
+  desired.add(horizontalTowardRidge.multiplyScalar((0.06 + (flowProfile.exhaustPullStrength * 0.08)) * approach));
+}
+
+function getRidgeExitDistanceSq(particle) {
+  if (!particle?.exitPoint) {
+    return 0;
+  }
+
+  return particle.position.distanceToSquared(particle.exitPoint);
+}
+
+function shouldBeginRidgeFade(particle) {
+  if (particle.exhaustKind !== "ridge") {
+    return true;
+  }
+
+  const fadeDelay = Math.max(0, particle.exhaustFadeDelay || 0);
+  const fadeDistance = particle.ridgeFadeStartDistance || 0.8;
+  const traveledFarEnough = getRidgeExitDistanceSq(particle) >= (fadeDistance * fadeDistance);
+  return particle.exhaustAge >= fadeDelay && traveledFarEnough;
+}
+
+function updateExitedRidgeParticle(particle, pull, spreadVector) {
+  const ageProgress = THREE.MathUtils.clamp(particle.exhaustAge / 6.2, 0, 1);
+  const peelProgress = THREE.MathUtils.clamp((particle.exhaustAge - 0.16) / 1.75, 0, 1);
+  const incomingCarry = TEMP_VEC_1
+    .copy(particle.ridgeIncomingVelocity)
+    .multiplyScalar(THREE.MathUtils.lerp(0.64, 0.18, peelProgress));
+  incomingCarry.y = Math.max(0, incomingCarry.y);
+
+  const slopeStrength = THREE.MathUtils.lerp(1.02, 0.54, ageProgress) * THREE.MathUtils.lerp(1.0, 0.7, peelProgress);
+  const outwardStrength = (THREE.MathUtils.lerp(0.12, 0.84, peelProgress) * THREE.MathUtils.lerp(1.0, 0.8, ageProgress)) + (pull * 0.12);
+  const liftStrength = THREE.MathUtils.lerp(0.32, 0.18, ageProgress);
+  const alongStrength = (particle.ridgeExitDrift || 0) * THREE.MathUtils.lerp(0.045, 0.02, ageProgress);
+
+  const ridgeTarget = TEMP_VEC_2
+    .copy(particle.ridgeSlopeDirection)
+    .multiplyScalar(slopeStrength)
+    .addScaledVector(particle.ridgeOutwardDirection, outwardStrength)
+    .addScaledVector(particle.ridgeAlongDirection, alongStrength)
+    .addScaledVector(spreadVector, 0.24);
+  ridgeTarget.y += liftStrength;
+
+  return TEMP_VEC_3
+    .copy(incomingCarry)
+    .addScaledVector(ridgeTarget, THREE.MathUtils.lerp(0.55, 1.0, peelProgress));
+}
+
 function getAtticBounds() {
   const geometry = getGeometryStateRef();
   const params = geometry.currentGeometryParams || {};
@@ -429,6 +733,258 @@ function getVentilationMode(ventState) {
   return VentilationMode.BALANCED;
 }
 
+function getVentilationRuleFromGeometry() {
+  if (!getGeometryStateRef) {
+    return "1/150";
+  }
+
+  const geometry = getGeometryStateRef();
+  const rule = geometry?.currentGeometryParams?.ventilationRule;
+  return rule === "1/300" ? "1/300" : "1/150";
+}
+
+function getVentilationFlowProfile(bounds, ventState, mode) {
+  const intakeCount = (ventState.intakeVents || []).length;
+  const staticCount = (ventState.staticVents || []).length;
+  const ridgeLengthFeet = (ventState.ridgeVents || []).reduce((sum, vent) => sum + (vent.length || 0), 0);
+
+  const atticAreaSqFt = calculateAtticArea(bounds.halfWidth * 2, bounds.halfLength * 2);
+  const ventilationRule = getVentilationRuleFromGeometry();
+  const requiredTotalIn2 = calculateRequiredVentilation(atticAreaSqFt, ventilationRule);
+  const requiredIntakeIn2 = calculateRequiredIntake(requiredTotalIn2);
+  const requiredExhaustIn2 = calculateRequiredExhaust(requiredTotalIn2);
+
+  const installed = calculateInstalledVentilation({
+    intakeCount,
+    staticCount,
+    ridgeLengthFeet
+  });
+
+  const intakeRatio = requiredIntakeIn2 > 0
+    ? THREE.MathUtils.clamp(installed.installedIntakeIn2 / requiredIntakeIn2, 0, 1.5)
+    : 0;
+  const exhaustRatio = requiredExhaustIn2 > 0
+    ? THREE.MathUtils.clamp(installed.installedExhaustIn2 / requiredExhaustIn2, 0, 1.5)
+    : 0;
+
+  const hasIntake = intakeCount > 0;
+  const hasExhaust = (staticCount + (ventState.ridgeVents || []).length) > 0;
+  const minCoverage = Math.min(intakeRatio, exhaustRatio);
+  const ratioGap = Math.abs(intakeRatio - exhaustRatio);
+  const ratioDenominator = Math.max(intakeRatio, exhaustRatio, 1);
+  const pairBalance = 1 - THREE.MathUtils.clamp(ratioGap / ratioDenominator, 0, 1);
+
+  let quality = 0.04;
+  if (mode === VentilationMode.BALANCED) {
+    quality = THREE.MathUtils.clamp((minCoverage * 0.72) + (pairBalance * 0.28), 0.08, 1);
+  } else if (mode === VentilationMode.INTAKE_ONLY) {
+    quality = THREE.MathUtils.clamp(intakeRatio * 0.3, 0.06, 0.36);
+  } else if (mode === VentilationMode.EXHAUST_ONLY) {
+    quality = THREE.MathUtils.clamp(exhaustRatio * 0.3, 0.06, 0.34);
+  }
+
+  const directionalStrength = THREE.MathUtils.clamp(0.15 + (quality * 0.9), 0.1, 1);
+  const intakeDrive = hasIntake ? THREE.MathUtils.clamp(0.2 + (quality * 0.9), 0.12, 1.05) : 0.02;
+  const exhaustPullStrength = hasExhaust ? THREE.MathUtils.clamp(0.15 + (quality * 1.0), 0.1, 1.15) : 0.02;
+  const chaosStrength = THREE.MathUtils.clamp(0.22 + ((1 - quality) * 0.7), 0.2, 0.95);
+  const stagnationStrength = THREE.MathUtils.clamp(0.2 + ((1 - quality) * 0.85), 0.18, 1);
+  const exhaustCaptureRadius = THREE.MathUtils.lerp(0.24, 0.45, THREE.MathUtils.clamp(exhaustPullStrength, 0, 1));
+
+  return {
+    mode,
+    quality,
+    intakeRatio,
+    exhaustRatio,
+    directionalStrength,
+    intakeDrive,
+    exhaustPullStrength,
+    chaosStrength,
+    stagnationStrength,
+    exhaustCaptureRadius
+  };
+}
+
+function getNearestIntakeVent(position, ventState) {
+  const intakeVents = ventState.intakeVents || [];
+  if (!intakeVents.length) {
+    return null;
+  }
+
+  let nearestVent = intakeVents[0];
+  let nearestDistanceSq = position.distanceToSquared(nearestVent.position);
+
+  for (let i = 1; i < intakeVents.length; i += 1) {
+    const candidate = intakeVents[i];
+    const distanceSq = position.distanceToSquared(candidate.position);
+    if (distanceSq < nearestDistanceSq) {
+      nearestVent = candidate;
+      nearestDistanceSq = distanceSq;
+    }
+  }
+
+  return {
+    vent: nearestVent,
+    distanceSq: nearestDistanceSq
+  };
+}
+
+function applyDirectionalBias(particle, bounds, nearestTarget, flowProfile) {
+  const heightRatio = THREE.MathUtils.clamp(particle.position.y / Math.max(bounds.atticHeight, 0.001), 0, 1);
+  const riseStrength = THREE.MathUtils.lerp(0.08, 0.4, flowProfile.directionalStrength) * (0.86 + ((1 - heightRatio) * 0.28));
+  const desiredBias = new THREE.Vector3(0, riseStrength, 0);
+
+  if (nearestTarget) {
+    const toTarget = nearestTarget.position.clone().sub(particle.position);
+    const distance = toTarget.length();
+    if (distance > 0.0001) {
+      const distanceFactor = 1 - THREE.MathUtils.clamp(distance / Math.max(bounds.halfLength, 1), 0, 1);
+      const lateralPull = (0.12 + (distanceFactor * 0.55)) * flowProfile.directionalStrength;
+      desiredBias.add(toTarget.normalize().multiplyScalar(lateralPull));
+    }
+  }
+
+  return desiredBias;
+}
+
+function applyIntakeInfluence(particle, desired, deltaTime, ventState, flowProfile) {
+  const nearestIntake = getNearestIntakeVent(particle.position, ventState);
+  if (!nearestIntake) {
+    return { nearestIntake, intakeInfluence: 0 };
+  }
+
+  const influenceRadiusSq = 2.4 * 2.4;
+  const intakeInfluence = 1 - THREE.MathUtils.clamp(nearestIntake.distanceSq / influenceRadiusSq, 0, 1);
+  if (intakeInfluence <= 0) {
+    return { nearestIntake, intakeInfluence: 0 };
+  }
+
+  const inwardDirection = nearestIntake.vent.side === "left" ? 1 : -1;
+  const inwardPush = new THREE.Vector3(
+    inwardDirection * (0.18 + (flowProfile.intakeDrive * 0.3)),
+    0.08 + (flowProfile.intakeDrive * 0.16),
+    (Math.random() - 0.5) * (0.08 + (flowProfile.chaosStrength * 0.06))
+  );
+
+  desired.addScaledVector(inwardPush, intakeInfluence);
+
+  const energyBoost = 1 + (intakeInfluence * flowProfile.intakeDrive * deltaTime * 0.35);
+  particle.velocity.multiplyScalar(THREE.MathUtils.clamp(energyBoost, 1, 1.05));
+
+  return { nearestIntake, intakeInfluence };
+}
+
+function applyStagnationInfluence(desired, nearestExhaustDistanceSq, nearestIntake, flowProfile) {
+  const intakeInfluence = nearestIntake
+    ? 1 - THREE.MathUtils.clamp(nearestIntake.distanceSq / (2.4 * 2.4), 0, 1)
+    : 0;
+  const exhaustInfluence = Number.isFinite(nearestExhaustDistanceSq)
+    ? 1 - THREE.MathUtils.clamp(nearestExhaustDistanceSq / (2.8 * 2.8), 0, 1)
+    : 0;
+
+  const localActivity = Math.max(0, intakeInfluence, exhaustInfluence);
+  const stagnation = (1 - localActivity) * flowProfile.stagnationStrength;
+  if (stagnation <= 0.001) {
+    return;
+  }
+
+  desired.multiplyScalar(1 - (stagnation * 0.38));
+  desired.add(new THREE.Vector3(
+    (Math.random() - 0.5) * 0.14 * stagnation,
+    (Math.random() - 0.5) * 0.05 * stagnation,
+    (Math.random() - 0.5) * 0.14 * stagnation
+  ));
+}
+
+function transitionParticleToExhaust(particle, nearestTarget, flowProfile, velocityScale = 1) {
+  const exitPoint = getRandomExhaustExitPoint(nearestTarget) || nearestTarget.position;
+  const spread = getExhaustSpreadForTarget(nearestTarget);
+  const pullStrength = THREE.MathUtils.clamp(flowProfile.exhaustPullStrength, 0.12, 1.2);
+
+  particle.phase = "exhaust";
+  particle.exhaustAge = 0;
+  particle.exitPoint = exitPoint.clone();
+  particle.exhaustSpreadDirection.copy(spread.direction);
+  particle.exhaustSpreadStrength = spread.strength * pullStrength;
+  particle.exhaustPullStrength = pullStrength;
+  particle.exhaustKind = nearestTarget.kind || "static";
+  particle.exhaustFadeDelay = 0;
+  particle.exhaustFadeDuration = EXHAUST_FADE_OUT_SECONDS;
+  particle.exhaustMinTravelTime = 0.2;
+  particle.exhaustRemovalDistance = THREE.MathUtils.lerp(0.55, 1.05, THREE.MathUtils.clamp(pullStrength, 0, 1));
+  particle.ridgeOutwardDirection.set(0, 0, 0);
+  particle.ridgeSlopeDirection.set(0, 0, 0);
+  particle.ridgeAlongDirection.set(0, 0, 0);
+  particle.ridgeIncomingVelocity.set(0, 0, 0);
+  particle.ridgeFadeStartDistance = 0.8;
+  particle.ridgeSideSign = 0;
+  particle.ridgeExitDrift = 0;
+  particle.isExitingRidge = false;
+
+  if (nearestTarget.kind === "ridge") {
+    const ridgeDeflection = applyRidgeDeflection(particle, nearestTarget);
+    if (ridgeDeflection) {
+      particle.ridgeIncomingVelocity.copy(particle.velocity);
+      particle.ridgeOutwardDirection.copy(ridgeDeflection.outward);
+      particle.ridgeSlopeDirection.copy(ridgeDeflection.slopeDirection);
+      particle.ridgeAlongDirection.copy(ridgeDeflection.alongAxis);
+      particle.ridgeSideSign = ridgeDeflection.sideSign;
+      particle.ridgeExitDrift = THREE.MathUtils.lerp(-0.35, 0.35, Math.random());
+      particle.isExitingRidge = true;
+      particle.ridgeExitAge = 0;
+      particle.ridgeExitProgress = 0;
+
+      particle.exhaustFadeDelay =
+        THREE.MathUtils.lerp(1.7, 2.55, ridgeDeflection.ridgeZoneInfluence) +
+        RIDGE_EXIT_EXTRA_FADE_DELAY;
+
+      particle.exhaustFadeDuration =
+        EXHAUST_FADE_OUT_SECONDS * THREE.MathUtils.lerp(2.7, 3.35, ridgeDeflection.ridgeZoneInfluence);
+
+      particle.exhaustMinTravelTime = 1.8;
+
+      particle.exhaustRemovalDistance *=
+        THREE.MathUtils.lerp(2.2, 2.95, ridgeDeflection.ridgeZoneInfluence) +
+        RIDGE_EXIT_EXTRA_REMOVAL_DISTANCE;
+
+      particle.ridgeFadeStartDistance = THREE.MathUtils.lerp(1.2, 1.75, ridgeDeflection.ridgeZoneInfluence);
+
+      const ridgeBlendVelocity = particle.ridgeIncomingVelocity
+        .clone()
+        .multiplyScalar(0.82)
+        .add(
+          ridgeDeflection.slopeDirection
+            .clone()
+            .multiplyScalar((0.34 + (pullStrength * 0.08)) * velocityScale)
+        )
+        .add(
+          ridgeDeflection.outward
+            .clone()
+            .multiplyScalar((0.025 + (pullStrength * 0.025)) * velocityScale)
+        )
+        .add(new THREE.Vector3(0, 0.16, 0))
+        .add(
+          ridgeDeflection.alongAxis
+            .clone()
+            .multiplyScalar((Math.random() - 0.5) * 0.018)
+        );
+
+      particle.velocity.copy(ridgeBlendVelocity);
+    }
+  } else {
+    particle.velocity.copy(
+      nearestTarget.normal
+        .clone()
+        .multiplyScalar((0.48 + (pullStrength * 0.44)) * velocityScale)
+        .add(new THREE.Vector3(0, (0.2 + (pullStrength * 0.28)) * velocityScale, 0))
+    );
+  }
+
+  if (particle.velocity.lengthSq() <= 0.00001) {
+    particle.velocity.copy(new THREE.Vector3(0, 0.35, 0));
+  }
+  particle.position.copy(exitPoint);
+}
+
 function getRandomPointInsideAttic(bounds) {
   const xPadding = 0.3;
   const zPadding = 0.3;
@@ -443,9 +999,11 @@ function getRandomPointInsideAttic(bounds) {
 function createTrappedParticle(position) {
   const mesh = createParticleMesh(position);
   airflowGroup.add(mesh);
+  const trail = createParticleTrail(position);
 
   particles.push({
     mesh,
+    trail,
     position: position.clone(),
     velocity: new THREE.Vector3(
       THREE.MathUtils.lerp(-TRAPPED_BASE_DRIFT_SPEED, TRAPPED_BASE_DRIFT_SPEED, Math.random()),
@@ -463,6 +1021,20 @@ function createTrappedParticle(position) {
     exitPoint: null,
     exhaustSpreadDirection: new THREE.Vector3(0, 0, 0),
     exhaustSpreadStrength: 0,
+    exhaustPullStrength: 0,
+    exhaustRemovalDistance: 0.8,
+    exhaustKind: "static",
+    exhaustFadeDelay: 0,
+    exhaustFadeDuration: EXHAUST_FADE_OUT_SECONDS,
+    exhaustMinTravelTime: 0.2,
+    isExitingRidge: false,
+    ridgeSideSign: 0,
+    ridgeOutwardDirection: new THREE.Vector3(0, 0, 0),
+    ridgeSlopeDirection: new THREE.Vector3(0, 0, 0),
+    ridgeAlongDirection: new THREE.Vector3(0, 0, 0),
+    ridgeIncomingVelocity: new THREE.Vector3(0, 0, 0),
+    ridgeFadeStartDistance: 0.8,
+    ridgeExitDrift: 0,
     exhaustAge: 0,
     baseOpacity: PARTICLE_OPACITY * THREE.MathUtils.lerp(0.7, 1.05, Math.random()),
     baseSize: PARTICLE_SIZE * THREE.MathUtils.lerp(0.9, 1.18, Math.random()),
@@ -661,9 +1233,11 @@ function createParticleFromIntakeVent(intakeVent) {
 
   const mesh = createParticleMesh(startPosition);
   airflowGroup.add(mesh);
+  const trail = createParticleTrail(startPosition);
 
   particles.push({
     mesh,
+    trail,
     position: startPosition.clone(),
     velocity: new THREE.Vector3(
       inwardDirection * 0.68,
@@ -681,6 +1255,20 @@ function createParticleFromIntakeVent(intakeVent) {
       exitPoint: null,
       exhaustSpreadDirection: new THREE.Vector3(0, 0, 0),
       exhaustSpreadStrength: 0,
+      exhaustPullStrength: 0,
+      exhaustRemovalDistance: 0.8,
+      exhaustKind: "static",
+      exhaustFadeDelay: 0,
+      exhaustFadeDuration: EXHAUST_FADE_OUT_SECONDS,
+      exhaustMinTravelTime: 0.2,
+      isExitingRidge: false,
+      ridgeSideSign: 0,
+      ridgeOutwardDirection: new THREE.Vector3(0, 0, 0),
+      ridgeSlopeDirection: new THREE.Vector3(0, 0, 0),
+      ridgeAlongDirection: new THREE.Vector3(0, 0, 0),
+      ridgeIncomingVelocity: new THREE.Vector3(0, 0, 0),
+      ridgeFadeStartDistance: 0.8,
+      ridgeExitDrift: 0,
       exhaustAge: 0,
       baseOpacity: PARTICLE_OPACITY * THREE.MathUtils.lerp(0.92, 1.08, Math.random()),
       baseSize: PARTICLE_SIZE * THREE.MathUtils.lerp(0.92, 1.24, Math.random()),
@@ -761,17 +1349,19 @@ function updateSetupModeParticle(particle, deltaTime, bounds) {
   confineToAttic(particle, bounds);
 }
 
-function updateIntakePhase(particle, deltaTime, bounds) {
+function updateIntakePhase(particle, deltaTime, bounds, ventState, flowProfile) {
   const inwardDirection = particle.side === "left" ? 1 : -1;
-  const inwardStrength = simulationRunning ? 0.95 : 0.42;
-  const upwardStrength = simulationRunning ? 0.34 : 0.16;
-  const lateralStrength = simulationRunning ? 0.1 : 0.24;
+  const inwardStrength = (simulationRunning ? 0.95 : 0.42) * (0.7 + (flowProfile.intakeDrive * 0.4));
+  const upwardStrength = (simulationRunning ? 0.34 : 0.16) * (0.75 + (flowProfile.directionalStrength * 0.35));
+  const lateralStrength = (simulationRunning ? 0.1 : 0.24) * (0.9 + (flowProfile.chaosStrength * 0.25));
 
   const desired = new THREE.Vector3(
     inwardDirection * inwardStrength,
     upwardStrength,
     (Math.random() - 0.5) * lateralStrength
   );
+
+  applyIntakeInfluence(particle, desired, deltaTime, ventState, flowProfile);
 
   particle.velocity.lerp(desired, 0.16);
   particle.position.addScaledVector(particle.velocity, deltaTime);
@@ -812,7 +1402,7 @@ function decayFreshnessInTrappedAir(particle, deltaTime, durationSeconds) {
   }
 }
 
-function updateAtticPhase(particle, deltaTime, bounds, ventState) {
+function updateAtticPhase(particle, deltaTime, bounds, ventState, flowProfile) {
   const heightRatio = THREE.MathUtils.clamp(particle.position.y / Math.max(bounds.atticHeight, 0.001), 0, 1);
   const centerRatio = 1 - THREE.MathUtils.clamp(Math.abs(particle.position.x) / Math.max(bounds.halfWidth, 0.001), 0, 1);
   const centerBias = new THREE.Vector3(
@@ -828,49 +1418,54 @@ function updateAtticPhase(particle, deltaTime, bounds, ventState) {
     Math.cos((particle.age * 0.7) + particle.driftSeed * 5) * 0.12
   );
   const turbulence = new THREE.Vector3(
-    (Math.random() - 0.5) * 0.1,
-    (Math.random() - 0.5) * 0.05,
-    (Math.random() - 0.5) * 0.14
+    (Math.random() - 0.5) * (0.06 + (flowProfile.chaosStrength * 0.08)),
+    (Math.random() - 0.5) * (0.03 + (flowProfile.chaosStrength * 0.04)),
+    (Math.random() - 0.5) * (0.08 + (flowProfile.chaosStrength * 0.12))
   );
 
   let desired = centerBias.add(lateralSpread).add(circulation).add(turbulence);
   const nearestTarget = getNearestExhaustTarget(particle.position, ventState);
+  const directionalBias = applyDirectionalBias(particle, bounds, nearestTarget, flowProfile);
+  desired.add(directionalBias);
+  const intakeInfluenceData = applyIntakeInfluence(particle, desired, deltaTime, ventState, flowProfile);
+
   if (nearestTarget) {
     const toTarget = nearestTarget.position.clone().sub(particle.position);
     const distance = toTarget.length();
     if (distance > 0.0001) {
       const distanceFactor = 1 - THREE.MathUtils.clamp(distance / Math.max(bounds.halfLength, 1), 0, 1);
-      const targetStrength = (0.3 + (heightRatio * 0.45) + (centerRatio * 0.1) + (distanceFactor * 0.35)) * BALANCED_DIRECTIONAL_BOOST;
+      const targetStrength = (0.16 + (heightRatio * 0.4) + (centerRatio * 0.08) + (distanceFactor * 0.45))
+        * flowProfile.exhaustPullStrength
+        * BALANCED_DIRECTIONAL_BOOST;
       toTarget.normalize().multiplyScalar(targetStrength);
       desired.add(toTarget);
     }
 
+    applyRidgeApproachLift(desired, particle, nearestTarget, distance, flowProfile);
+
     particle.targetExhaust = nearestTarget;
-    if (distance < 0.35) {
-      const exitPoint = getRandomExhaustExitPoint(nearestTarget) || nearestTarget.position;
-      const spread = getExhaustSpreadForTarget(nearestTarget);
-      particle.phase = "exhaust";
-      particle.exhaustAge = 0;
-      particle.exitPoint = exitPoint.clone();
-      particle.exhaustSpreadDirection.copy(spread.direction);
-      particle.exhaustSpreadStrength = spread.strength;
-      particle.velocity.copy(nearestTarget.normal.clone().multiplyScalar(0.9).add(new THREE.Vector3(0, 0.35, 0)));
-      particle.position.copy(exitPoint);
+    if (distance < flowProfile.exhaustCaptureRadius) {
+      transitionParticleToExhaust(particle, nearestTarget, flowProfile, 1);
     }
   } else {
     particle.targetExhaust = null;
   }
+
+  const nearestExhaustDistanceSq = nearestTarget
+    ? particle.position.distanceToSquared(nearestTarget.position)
+    : Infinity;
+  applyStagnationInfluence(desired, nearestExhaustDistanceSq, intakeInfluenceData.nearestIntake, flowProfile);
 
   particle.velocity.lerp(desired, 0.08);
   particle.position.addScaledVector(particle.velocity, deltaTime);
   confineToAttic(particle, bounds);
 }
 
-function updateTrappedPhase(particle, deltaTime, bounds, ventState, mode) {
+function updateTrappedPhase(particle, deltaTime, bounds, ventState, mode, flowProfile) {
   const driftNoise = new THREE.Vector3(
-    (Math.random() - 0.5) * 0.12,
-    (Math.random() - 0.5) * 0.05,
-    (Math.random() - 0.5) * 0.12
+    (Math.random() - 0.5) * (0.08 + (flowProfile.chaosStrength * 0.09)),
+    (Math.random() - 0.5) * (0.03 + (flowProfile.chaosStrength * 0.04)),
+    (Math.random() - 0.5) * (0.08 + (flowProfile.chaosStrength * 0.1))
   );
 
   const circulation = new THREE.Vector3(
@@ -884,28 +1479,23 @@ function updateTrappedPhase(particle, deltaTime, bounds, ventState, mode) {
     .multiplyScalar(0.08)
     .add(circulation)
     .add(driftNoise)
-    .add(new THREE.Vector3(0, TRAPPED_UPWARD_BIAS, 0));
+    .add(new THREE.Vector3(0, TRAPPED_UPWARD_BIAS * (0.75 + (flowProfile.directionalStrength * 0.38)), 0));
+
+  const nearestTarget = getNearestExhaustTarget(particle.position, ventState);
+  trappedDesired.add(applyDirectionalBias(particle, bounds, nearestTarget, flowProfile));
+  const intakeInfluenceData = applyIntakeInfluence(particle, trappedDesired, deltaTime, ventState, flowProfile);
 
   if (mode === VentilationMode.EXHAUST_ONLY) {
-    const nearestTarget = getNearestExhaustTarget(particle.position, ventState);
     if (nearestTarget) {
       const toTarget = nearestTarget.position.clone().sub(particle.position);
       const distance = toTarget.length();
       if (distance > 0.0001) {
-        toTarget.normalize().multiplyScalar(WEAK_ESCAPE_STRENGTH);
+        toTarget.normalize().multiplyScalar(WEAK_ESCAPE_STRENGTH * flowProfile.exhaustPullStrength);
         trappedDesired.add(toTarget);
       }
 
-      if (distance < 0.32) {
-        const exitPoint = getRandomExhaustExitPoint(nearestTarget) || nearestTarget.position;
-        const spread = getExhaustSpreadForTarget(nearestTarget);
-        particle.phase = "exhaust";
-        particle.exhaustAge = 0;
-        particle.exitPoint = exitPoint.clone();
-        particle.exhaustSpreadDirection.copy(spread.direction);
-        particle.exhaustSpreadStrength = spread.strength * 0.6;
-        particle.velocity.copy(nearestTarget.normal.clone().multiplyScalar(0.58).add(new THREE.Vector3(0, 0.26, 0)));
-        particle.position.copy(exitPoint);
+      if (distance < Math.max(0.28, flowProfile.exhaustCaptureRadius * 0.92)) {
+        transitionParticleToExhaust(particle, nearestTarget, flowProfile, 0.78);
       }
     }
   }
@@ -926,27 +1516,63 @@ function updateTrappedPhase(particle, deltaTime, bounds, ventState, mode) {
     decayFreshnessInTrappedAir(particle, deltaTime, GENERAL_TRAPPED_FRESH_TO_STALE_SECONDS);
   }
 
+  const nearestExhaustDistanceSq = nearestTarget
+    ? particle.position.distanceToSquared(nearestTarget.position)
+    : Infinity;
+  applyStagnationInfluence(trappedDesired, nearestExhaustDistanceSq, intakeInfluenceData.nearestIntake, flowProfile);
+
   particle.velocity.lerp(trappedDesired, 0.06);
   particle.position.addScaledVector(particle.velocity, deltaTime);
   confineToAttic(particle, bounds);
 }
 
-function updateExhaustPhase(particle, deltaTime) {
+function updateExhaustPhase(particle, deltaTime, flowProfile) {
   particle.exhaustAge += deltaTime;
 
   const spreadFade = THREE.MathUtils.clamp(1 - (particle.exhaustAge / 3.2), 0.28, 1);
-  const spreadVector = particle.exhaustSpreadDirection
-    .clone()
-    .multiplyScalar(particle.exhaustSpreadStrength * spreadFade);
-  const upwardLift = new THREE.Vector3(0, 0.75, 0).add(spreadVector);
+  const pull = THREE.MathUtils.clamp(
+    particle.exhaustPullStrength || flowProfile.exhaustPullStrength || 0.2,
+    0.15,
+    1.2
+  );
+  const spreadVector = TEMP_VEC_4
+    .copy(particle.exhaustSpreadDirection)
+    .multiplyScalar(particle.exhaustSpreadStrength * spreadFade * (0.8 + (pull * 0.25)));
 
-  particle.velocity.lerp(upwardLift, 0.1);
+  let upwardLift = new THREE.Vector3(0, 0.5 + (pull * 0.42), 0).add(spreadVector);
+  let ridgeLerp = 0.1;
+  if (particle.exhaustKind === "ridge" && particle.isExitingRidge) {
+    upwardLift = updateExitedRidgeParticle(particle, pull, spreadVector);
+    ridgeLerp = 0.07;
+  }
+
+  particle.velocity.lerp(upwardLift, ridgeLerp);
   particle.position.addScaledVector(particle.velocity, deltaTime);
 }
 
 function shouldRemoveParticle(particle, bounds) {
-  if (particle.phase === "exhaust" && particle.exhaustAge > EXHAUST_FADE_OUT_SECONDS) {
-    return true;
+  if (particle.phase === "exhaust" && particle.exitPoint) {
+    const removalDistance = particle.exhaustRemovalDistance || 0.85;
+    const movedAwayDistanceSq = particle.position.distanceToSquared(particle.exitPoint);
+    const minTravelTime = particle.exhaustMinTravelTime || 0.2;
+    if (
+      particle.exhaustAge > minTravelTime &&
+      shouldBeginRidgeFade(particle) &&
+      movedAwayDistanceSq >= (removalDistance * removalDistance)
+    ) {
+      return true;
+    }
+  }
+
+  if (particle.phase === "exhaust") {
+    const ageTail = particle.exhaustKind === "ridge" ? RIDGE_EXIT_EXTRA_LIFE : 0;
+    const maxExhaustAge =
+      (particle.exhaustFadeDelay || 0) +
+      (particle.exhaustFadeDuration || EXHAUST_FADE_OUT_SECONDS) +
+      ageTail;
+    if (particle.exhaustAge > maxExhaustAge) {
+      return true;
+    }
   }
 
   return false;
@@ -961,6 +1587,7 @@ function updateAirflow(deltaTime) {
   const bounds = getAtticBounds();
   const ventState = getVentsRef();
   const ventilationMode = getVentilationMode(ventState);
+  const flowProfile = getVentilationFlowProfile(bounds, ventState, ventilationMode);
 
   if (!simulationRunning) {
     // Setup mode: keep stale attic reservoir stable and ignore vents entirely.
@@ -970,7 +1597,9 @@ function updateAirflow(deltaTime) {
       const particle = particles[i];
       particle.age += dt;
       updateSetupModeParticle(particle, dt, bounds);
+      recordTrailPoint(particle);
       applyParticleVisuals(particle);
+      updateParticleTrail(particle);
       particle.mesh.position.copy(particle.position);
     }
 
@@ -986,19 +1615,26 @@ function updateAirflow(deltaTime) {
     const particle = particles[i];
     particle.age += dt;
 
-    if (particle.phase === "intake") {
-      updateIntakePhase(particle, dt, bounds);
-    } else if (particle.phase === "attic") {
-      if (ventilationMode === VentilationMode.BALANCED && simulationRunning) {
-        updateAtticPhase(particle, dt, bounds, ventState);
-      } else {
-        updateTrappedPhase(particle, dt, bounds, ventState, ventilationMode);
-      }
-    } else {
-      updateExhaustPhase(particle, dt);
+    if (particle.phase === "exhaust" && shouldRemoveParticle(particle, bounds)) {
+      disposeParticle(particle, i);
+      continue;
     }
 
+    if (particle.phase === "intake") {
+      updateIntakePhase(particle, dt, bounds, ventState, flowProfile);
+    } else if (particle.phase === "attic") {
+      if (ventilationMode === VentilationMode.BALANCED && simulationRunning) {
+        updateAtticPhase(particle, dt, bounds, ventState, flowProfile);
+      } else {
+        updateTrappedPhase(particle, dt, bounds, ventState, ventilationMode, flowProfile);
+      }
+    } else {
+      updateExhaustPhase(particle, dt, flowProfile);
+    }
+
+    recordTrailPoint(particle);
     applyParticleVisuals(particle);
+    updateParticleTrail(particle);
     particle.mesh.position.copy(particle.position);
 
     if (shouldRemoveParticle(particle, bounds)) {

@@ -663,35 +663,63 @@ function createRidgeVentGeometry(startPoint, endPoint) {
 	const group = new THREE.Group();
 	group.name = "ridgeVentGroup";
 
-	const length = startPoint.distanceTo(endPoint);
+	const ridgeSegment = endPoint.clone().sub(startPoint);
+	const length = ridgeSegment.length();
 	const midpoint = startPoint.clone().add(endPoint).multiplyScalar(0.5);
+	const alongAxis = length > 0.00001
+		? ridgeSegment.clone().divideScalar(length)
+		: new THREE.Vector3(0, 0, 1);
 
-	const openingMesh = new THREE.Mesh(
-		new THREE.BoxGeometry(RIDGE_WIDTH_FEET, 0.05, length),
-		new THREE.MeshStandardMaterial({
-			color: RIDGE_OPENING_COLOR,
-			emissive: 0x330022,
-			emissiveIntensity: 0.26,
-			roughness: 0.5,
-			metalness: 0.05
-		})
-	);
-	openingMesh.position.copy(midpoint);
-	openingMesh.position.y += 0.025;
-	openingMesh.name = "ridgeOpening";
-	group.add(openingMesh);
+	let acrossAxis = new THREE.Vector3().crossVectors(new THREE.Vector3(0, 1, 0), alongAxis).normalize();
+	if (!Number.isFinite(acrossAxis.x) || !Number.isFinite(acrossAxis.y) || !Number.isFinite(acrossAxis.z) || acrossAxis.lengthSq() <= 0.00001) {
+		acrossAxis = new THREE.Vector3(1, 0, 0);
+	}
 
-	const footprintWidth = RIDGE_WIDTH_FEET * 2.5;
-	const footprintMesh = new THREE.Mesh(
-		new THREE.BoxGeometry(footprintWidth, 0.04, length),
+	const baseAlign = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), alongAxis);
+	const capHalfWidth = RIDGE_WIDTH_FEET * 2.0;
+	const capRise = 0.085;
+	const capShape = new THREE.Shape();
+	capShape.moveTo(-capHalfWidth, 0);
+	capShape.lineTo(0, capRise);
+	capShape.lineTo(capHalfWidth, 0);
+	capShape.lineTo(-capHalfWidth, 0);
+
+	const capGeometry = new THREE.ExtrudeGeometry(capShape, {
+		depth: length,
+		bevelEnabled: false,
+		steps: 1
+	});
+	const capMesh = new THREE.Mesh(
+		capGeometry,
 		new THREE.MeshStandardMaterial({
 			color: RIDGE_BODY_COLOR,
-			roughness: 0.5,
-			metalness: 0.08
+			emissive: 0x261f00,
+			emissiveIntensity: 0.08,
+			roughness: 0.4,
+			metalness: 0.14
 		})
 	);
+	capMesh.quaternion.copy(baseAlign);
+	capMesh.position.copy(midpoint)
+		.addScaledVector(alongAxis, -length * 0.5);
+	capMesh.position.y += 0.028;
+	capMesh.name = "ridgeCap";
+	group.add(capMesh);
+
+	const footprintWidth = RIDGE_WIDTH_FEET * 3.0;
+	const footprintMesh = new THREE.Mesh(
+		new THREE.BoxGeometry(footprintWidth, 0.022, length),
+		new THREE.MeshStandardMaterial({
+			color: RIDGE_BODY_COLOR,
+			roughness: 0.6,
+			metalness: 0.04,
+			transparent: true,
+			opacity: 0.74
+		})
+	);
+	footprintMesh.quaternion.copy(baseAlign);
 	footprintMesh.position.copy(midpoint);
-	footprintMesh.position.y += 0.02;
+	footprintMesh.position.y += 0.01;
 	footprintMesh.name = "ridgeFootprint";
 	group.add(footprintMesh);
 
