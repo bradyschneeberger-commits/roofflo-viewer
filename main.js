@@ -86,6 +86,7 @@ const toolbarGridToggleButton = document.getElementById("btn-toolbar-grid-toggle
 const toolbarStartButton = document.getElementById("btn-toolbar-start");
 const toolbarResetButton = document.getElementById("btn-toolbar-reset");
 const toolbarResultsButton = document.getElementById("btn-toolbar-results");
+const topToolbar = document.getElementById("top-toolbar");
 const compactSetupButton = document.getElementById("btn-compact-setup");
 const compactPlacementButton = document.getElementById("btn-compact-placement");
 const compactPresetsButton = document.getElementById("btn-compact-presets");
@@ -996,6 +997,23 @@ function setRestoreAvailabilityUI() {
     }
 }
 
+function syncMessagePanelAnchor() {
+    if (!ventStatusToast || !topToolbar) {
+        return;
+    }
+
+    const isMobile = window.matchMedia("(max-width: 900px)").matches;
+    if (isMobile) {
+        ventStatusToast.style.left = "";
+        ventStatusToast.style.top = "";
+        return;
+    }
+
+    const toolbarRect = topToolbar.getBoundingClientRect();
+    ventStatusToast.style.left = `${Math.round(toolbarRect.right + 10)}px`;
+    ventStatusToast.style.top = `${Math.round(toolbarRect.top)}px`;
+}
+
 function showTemporaryStatusMessage(message, state = "info", durationMs = 1400) {
     if (!ventStatusToast || !ventStatusMessage) {
         return;
@@ -1536,6 +1554,7 @@ renderer.domElement.addEventListener("pointermove", onViewerPointerMove);
 renderer.domElement.addEventListener("pointerleave", onViewerPointerLeave);
 
 window.addEventListener("keydown", onSnapshotStripKeydown);
+window.addEventListener("resize", syncMessagePanelAnchor);
 
 updateSimulationButtonUI();
 syncGridVisibilityUI();
@@ -1544,6 +1563,7 @@ setWorkspaceTab(workspaceUiState.activeWorkspaceTab);
 syncWorkspaceUiState();
 setRestoreAvailabilityUI();
 renderSnapshotStrip();
+syncMessagePanelAnchor();
 
 let lastAnimationTime = performance.now();
 
