@@ -86,6 +86,19 @@ const toolbarGridToggleButton = document.getElementById("btn-toolbar-grid-toggle
 const toolbarStartButton = document.getElementById("btn-toolbar-start");
 const toolbarResetButton = document.getElementById("btn-toolbar-reset");
 const toolbarResultsButton = document.getElementById("btn-toolbar-results");
+const compactSetupButton = document.getElementById("btn-compact-setup");
+const compactPlacementButton = document.getElementById("btn-compact-placement");
+const compactPresetsButton = document.getElementById("btn-compact-presets");
+const compactSnapshotsButton = document.getElementById("btn-compact-snapshots");
+const compactOpenButton = document.getElementById("btn-compact-open");
+const compactQuickPlacement = document.getElementById("compact-quick-placement");
+const compactQuickPresets = document.getElementById("compact-quick-presets");
+const quickPlacementIntakeButton = document.getElementById("btn-quick-placement-intake");
+const quickPlacementStaticButton = document.getElementById("btn-quick-placement-static");
+const quickPlacementRidgeButton = document.getElementById("btn-quick-placement-ridge");
+const quickPresetIntakeButton = document.getElementById("btn-quick-preset-intake");
+const quickPresetExhaustButton = document.getElementById("btn-quick-preset-exhaust");
+const quickPresetBalancedButton = document.getElementById("btn-quick-preset-balanced");
 const snapshotStrip = document.getElementById("snapshot-strip");
 const snapshotAddButton = document.getElementById("btn-snapshot-add");
 const workspaceTabButtons = Array.from(document.querySelectorAll(".workspace-tab"));
@@ -101,7 +114,8 @@ let simulationState = SimulationState.IDLE;
 let activePlacementMode = PlacementMode.NONE;
 let workspaceUiState = {
     activeWorkspaceTab: "setup",
-    isToolPanelExpanded: true,
+    isDrawerOpen: false,
+    compactQuickMode: "none",
     isResultsOpen: false,
     isGridVisible: true,
     isSnapshotSaveAnimating: false
@@ -752,17 +766,53 @@ function setWorkspaceTab(tab) {
     }
 }
 
+function closeCompactQuickModes() {
+    workspaceUiState.compactQuickMode = "none";
+}
+
+function openDrawerToTab(tab) {
+    workspaceUiState.isDrawerOpen = true;
+    closeCompactQuickModes();
+    if (tab) {
+        setWorkspaceTab(tab);
+    }
+    syncWorkspaceUiState();
+}
+
+function toggleCompactQuickMode(mode) {
+    workspaceUiState.isDrawerOpen = false;
+    workspaceUiState.compactQuickMode = workspaceUiState.compactQuickMode === mode ? "none" : mode;
+    syncWorkspaceUiState();
+}
+
 function syncWorkspaceUiState() {
     if (!controlPanel || !resultsPanel || !controlsToggleButton) {
         return;
     }
 
-    controlPanel.classList.toggle("is-collapsed", !workspaceUiState.isToolPanelExpanded);
+    controlPanel.classList.toggle("is-closed", !workspaceUiState.isDrawerOpen);
+    compactQuickPlacement.hidden = workspaceUiState.compactQuickMode !== "placement";
+    compactQuickPresets.hidden = workspaceUiState.compactQuickMode !== "presets";
+
+    const hasActivePlacementMode = activePlacementMode !== PlacementMode.NONE;
+    compactPlacementButton?.classList.toggle("is-active", workspaceUiState.compactQuickMode === "placement" || hasActivePlacementMode);
+    compactPresetsButton?.classList.toggle("is-active", workspaceUiState.compactQuickMode === "presets");
+    compactSetupButton?.classList.toggle("is-active", workspaceUiState.activeWorkspaceTab === "setup" && !workspaceUiState.compactQuickMode);
+    compactSnapshotsButton?.classList.toggle("is-active", workspaceUiState.activeWorkspaceTab === "snapshots" && !workspaceUiState.compactQuickMode);
+    compactPlacementButton?.setAttribute("aria-pressed", (workspaceUiState.compactQuickMode === "placement" || hasActivePlacementMode) ? "true" : "false");
+    compactPresetsButton?.setAttribute("aria-pressed", workspaceUiState.compactQuickMode === "presets" ? "true" : "false");
+    compactSetupButton?.setAttribute("aria-pressed", workspaceUiState.activeWorkspaceTab === "setup" ? "true" : "false");
+    compactSnapshotsButton?.setAttribute("aria-pressed", workspaceUiState.activeWorkspaceTab === "snapshots" ? "true" : "false");
+
     resultsPanel.classList.toggle("is-open", workspaceUiState.isResultsOpen);
     resultsPanel.setAttribute("aria-hidden", workspaceUiState.isResultsOpen ? "false" : "true");
 
-    controlsToggleButton.setAttribute("aria-expanded", workspaceUiState.isToolPanelExpanded ? "true" : "false");
-    controlsToggleButton.setAttribute("title", workspaceUiState.isToolPanelExpanded ? "Collapse Tool Panel" : "Expand Tool Panel");
+    controlsToggleButton.setAttribute("aria-expanded", workspaceUiState.isDrawerOpen ? "true" : "false");
+    controlsToggleButton.setAttribute("title", workspaceUiState.isDrawerOpen ? "Collapse Tool Panel" : "Expand Tool Panel");
+
+    compactOpenButton?.setAttribute("aria-label", "Open tool drawer");
+    compactOpenButton?.setAttribute("title", "Open Drawer");
+
     if (toolbarResultsButton) {
         toolbarResultsButton.classList.toggle("is-active", workspaceUiState.isResultsOpen);
         toolbarResultsButton.setAttribute("aria-pressed", workspaceUiState.isResultsOpen ? "true" : "false");
@@ -770,7 +820,10 @@ function syncWorkspaceUiState() {
 }
 
 function toggleToolPanel() {
-    workspaceUiState.isToolPanelExpanded = !workspaceUiState.isToolPanelExpanded;
+    workspaceUiState.isDrawerOpen = !workspaceUiState.isDrawerOpen;
+    if (workspaceUiState.isDrawerOpen) {
+        closeCompactQuickModes();
+    }
     syncWorkspaceUiState();
 }
 
@@ -1092,6 +1145,10 @@ function updatePlacementButtonUI() {
         item.button.disabled = simulationState === SimulationState.RUNNING;
     }
 
+    quickPlacementIntakeButton?.classList.toggle("is-active", activePlacementMode === PlacementMode.INTAKE);
+    quickPlacementStaticButton?.classList.toggle("is-active", activePlacementMode === PlacementMode.STATIC);
+    quickPlacementRidgeButton?.classList.toggle("is-active", activePlacementMode === PlacementMode.RIDGE);
+
     const viewer = renderer.domElement;
     const isPlacementActive =
         activePlacementMode !== PlacementMode.NONE &&
@@ -1102,6 +1159,48 @@ function updatePlacementButtonUI() {
     // Keep camera controls available even while a placement mode is active.
     // Tap-vs-drag detection below prevents accidental placement during orbit.
     controls.enabled = true;
+
+    syncWorkspaceUiState();
+}
+
+function handleCompactPlacementIconClick() {
+    if (workspaceUiState.isDrawerOpen) {
+        openDrawerToTab("placement");
+        return;
+    }
+
+    if (workspaceUiState.compactQuickMode === "placement") {
+        openDrawerToTab("placement");
+        return;
+    }
+
+    toggleCompactQuickMode("placement");
+}
+
+function handleCompactPresetsIconClick() {
+    if (workspaceUiState.isDrawerOpen) {
+        openDrawerToTab("presets");
+        return;
+    }
+
+    if (workspaceUiState.compactQuickMode === "presets") {
+        openDrawerToTab("presets");
+        return;
+    }
+
+    toggleCompactQuickMode("presets");
+}
+
+function runCompactPlacementAction(mode) {
+    setPlacementMode(mode);
+    closeCompactQuickModes();
+    syncWorkspaceUiState();
+}
+
+function runCompactPresetAction(generator, source = "preset") {
+    applyToolbarPreset(generator, source);
+    closeCompactQuickModes();
+    syncWorkspaceUiState();
 }
 
 function setPlacementMode(mode) {
@@ -1350,9 +1449,7 @@ function playSnapshotSaveAnimation() {
 function onSaveCurrentLayoutClicked() {
     savedVentLayout = createViewerSnapshot({ source: currentLayoutSource || "unknown" });
     addSnapshotSlideFromCurrent();
-    setWorkspaceTab("snapshots");
-    workspaceUiState.isToolPanelExpanded = true;
-    syncWorkspaceUiState();
+    openDrawerToTab("snapshots");
     playSnapshotSaveAnimation();
     setRestoreAvailabilityUI();
     showTemporaryStatusMessage("Snapshot saved", "success", 1250);
@@ -1403,12 +1500,21 @@ toolbarGridToggleButton?.addEventListener("click", onGridToggleClicked);
 toolbarStartButton?.addEventListener("click", onStartSimulationClicked);
 toolbarResetButton?.addEventListener("click", onResetClicked);
 toolbarResultsButton?.addEventListener("click", toggleResultsPanel);
+compactSetupButton?.addEventListener("click", () => openDrawerToTab("setup"));
+compactSnapshotsButton?.addEventListener("click", () => openDrawerToTab("snapshots"));
+compactOpenButton?.addEventListener("click", () => openDrawerToTab(workspaceUiState.activeWorkspaceTab || "setup"));
+compactPlacementButton?.addEventListener("click", handleCompactPlacementIconClick);
+compactPresetsButton?.addEventListener("click", handleCompactPresetsIconClick);
+quickPlacementIntakeButton?.addEventListener("click", () => runCompactPlacementAction(PlacementMode.INTAKE));
+quickPlacementStaticButton?.addEventListener("click", () => runCompactPlacementAction(PlacementMode.STATIC));
+quickPlacementRidgeButton?.addEventListener("click", () => runCompactPlacementAction(PlacementMode.RIDGE));
+quickPresetIntakeButton?.addEventListener("click", () => runCompactPresetAction(generateIntakeOnlyPreset, "preset"));
+quickPresetExhaustButton?.addEventListener("click", () => runCompactPresetAction(generateExhaustOnlyPreset, "preset"));
+quickPresetBalancedButton?.addEventListener("click", () => runCompactPresetAction(() => generateBalancedPreset({ ventilationRule: selectedVentilationRule }), "preset"));
 snapshotAddButton?.addEventListener("click", () => {
     const added = addSnapshotSlideFromCurrent();
     if (added) {
-        setWorkspaceTab("snapshots");
-        workspaceUiState.isToolPanelExpanded = true;
-        syncWorkspaceUiState();
+        openDrawerToTab("snapshots");
         showTemporaryStatusMessage("Snapshot added", "success", 1200);
     }
 });
@@ -1420,9 +1526,7 @@ for (const tabButton of workspaceTabButtons) {
             return;
         }
 
-        setWorkspaceTab(tab);
-        workspaceUiState.isToolPanelExpanded = true;
-        syncWorkspaceUiState();
+        openDrawerToTab(tab);
     });
 }
 

@@ -4,15 +4,16 @@
 
 :root {
   --toolbar-height: 56px;
-  --drawer-height: 270px;
+  --drawer-open-height: 292px;
+  --drawer-closed-height: 72px;
+  --drawer-width-desktop: min(54vw, 860px);
+  --drawer-min-width-desktop: 560px;
   --surface: rgba(15, 23, 42, 0.78);
   --surface-strong: rgba(15, 23, 42, 0.9);
   --line: rgba(148, 163, 184, 0.34);
   --line-strong: rgba(148, 163, 184, 0.62);
   --text-main: #e2e8f0;
   --text-muted: #94a3b8;
-  --accent: #14b8a6;
-  --danger: #f43f5e;
   --safe-bottom: env(safe-area-inset-bottom);
 }
 
@@ -102,7 +103,7 @@ body {
 }
 
 .workspace-action-icon {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 800;
   line-height: 1;
 }
@@ -113,21 +114,21 @@ body {
 
 #results-panel {
   position: fixed;
-  top: 72px;
+  top: 74px;
   right: 12px;
-  width: min(360px, calc(100vw - 24px));
-  max-height: calc(100dvh - var(--drawer-height) - 92px);
+  width: min(300px, calc(100vw - 24px));
+  max-height: calc(100dvh - 74px - var(--drawer-open-height) - 28px);
   opacity: 0;
   pointer-events: none;
-  transform: translateY(-8px);
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transform: translateX(calc(100% + 20px));
+  transition: opacity 0.22s ease, transform 0.22s ease;
   z-index: 24;
 }
 
 #results-panel.is-open {
   opacity: 1;
   pointer-events: auto;
-  transform: translateY(0);
+  transform: translateX(0);
 }
 
 .results-overlay-content {
@@ -168,10 +169,13 @@ body {
 
 #control-panel {
   position: fixed;
-  left: 10px;
-  right: 10px;
+  left: 50%;
   bottom: 10px;
-  height: var(--drawer-height);
+  transform: translateX(-50%);
+  width: var(--drawer-width-desktop);
+  min-width: var(--drawer-min-width-desktop);
+  max-width: calc(100vw - 20px);
+  height: var(--drawer-open-height);
   border-radius: 18px;
   border: 1px solid var(--line);
   background: var(--surface-strong);
@@ -182,11 +186,103 @@ body {
   flex-direction: column;
   gap: 10px;
   z-index: 22;
-  transition: transform 0.24s ease;
+  box-shadow: 0 18px 42px rgba(2, 6, 23, 0.35);
+  transition: height 0.22s ease, padding 0.22s ease;
 }
 
-#control-panel.is-collapsed {
-  transform: translateY(calc(var(--drawer-height) - 50px));
+#control-panel.is-closed {
+  height: var(--drawer-closed-height);
+  padding: 8px 10px;
+}
+
+.drawer-compact-rail {
+  position: relative;
+  display: none;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.drawer-compact-main {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.compact-icon-btn {
+  height: 40px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: rgba(15, 23, 42, 0.62);
+  color: var(--text-main);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 780;
+  cursor: pointer;
+  transition: border-color 0.14s ease, background-color 0.14s ease;
+}
+
+.compact-icon-btn:hover {
+  border-color: var(--line-strong);
+  background: rgba(30, 41, 59, 0.84);
+}
+
+.compact-icon-btn.is-active {
+  border-color: rgba(45, 212, 191, 0.8);
+  background: rgba(13, 148, 136, 0.3);
+}
+
+.compact-open-btn {
+  border-color: rgba(96, 165, 250, 0.62);
+}
+
+.compact-quick-actions {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 8px;
+  background: var(--surface-strong);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 -8px 20px rgba(2, 6, 23, 0.28);
+  z-index: 1;
+}
+
+.compact-quick-actions[hidden] {
+  display: none;
+}
+
+.compact-quick-btn {
+  height: 34px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: rgba(30, 41, 59, 0.76);
+  color: var(--text-main);
+  font-size: 12px;
+  font-weight: 740;
+  cursor: pointer;
+}
+
+.compact-quick-btn.is-active {
+  border-color: rgba(45, 212, 191, 0.8);
+  background: rgba(13, 148, 136, 0.3);
+}
+
+#control-panel.is-closed .drawer-compact-rail {
+  display: flex;
+}
+
+#control-panel.is-closed .drawer-handle,
+#control-panel.is-closed .workspace-tabs,
+#control-panel.is-closed #control-panel-content {
+  display: none;
 }
 
 .drawer-handle {
@@ -205,12 +301,12 @@ body {
   width: 56px;
   height: 6px;
   border-radius: 999px;
-  background: rgba(148, 163, 184, 0.7);
+  background: rgba(148, 163, 184, 0.72);
 }
 
 .workspace-tabs {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 6px;
 }
 
@@ -502,14 +598,14 @@ select:focus {
 
 .vent-status-toast {
   position: fixed;
-  left: 50%;
-  bottom: calc(var(--drawer-height) + 14px + var(--safe-bottom));
-  transform: translate(-50%, 18px);
+  top: 10px;
+  right: 10px;
+  transform: translateX(calc(100% + 20px));
   display: flex;
   align-items: center;
   gap: 12px;
-  max-width: min(680px, calc(100vw - 24px));
-  padding: 12px 14px;
+  max-width: min(420px, calc(100vw - 24px));
+  padding: 10px 14px;
   border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.18);
   background: rgba(15, 23, 42, 0.72);
@@ -524,7 +620,7 @@ select:focus {
 .vent-status-toast.is-visible {
   opacity: 1;
   pointer-events: auto;
-  transform: translate(-50%, 0);
+  transform: translateX(0);
 }
 
 .vent-status-toast.is-danger { background: rgba(127, 29, 29, 0.4); }
@@ -622,48 +718,46 @@ select:focus {
 
 @media (max-width: 900px) {
   :root {
-    --toolbar-height: 52px;
-    --drawer-height: 320px;
-  }
-
-  .workspace-action-btn {
-    width: 36px;
-    height: 36px;
+    --drawer-open-height: 330px;
+    --drawer-closed-height: 74px;
   }
 
   #control-panel {
-    left: 6px;
-    right: 6px;
-    bottom: 6px;
-  }
-
-  #control-panel.is-collapsed {
-    transform: translateY(calc(var(--drawer-height) - 50px));
+    left: 8px;
+    right: 8px;
+    transform: none;
+    width: auto;
+    min-width: 0;
+    max-width: none;
   }
 
   #results-panel {
-    width: calc(100vw - 16px);
     right: 8px;
-    max-height: calc(100dvh - var(--drawer-height) - 86px);
-  }
-
-  .button-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    max-height: calc(100dvh - 74px - var(--drawer-closed-height) - 18px);
   }
 
   .workspace-tabs {
     grid-template-columns: repeat(2, 1fr);
   }
 
+  .button-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .vent-status-toast {
-    bottom: calc(var(--drawer-height) + 10px + var(--safe-bottom));
-    max-width: calc(100vw - 14px);
+    right: 8px;
+    max-width: calc(100vw - 20px);
   }
 }
 
 @media (max-width: 520px) {
   :root {
-    --drawer-height: 340px;
+    --drawer-open-height: 352px;
+  }
+
+  .workspace-action-btn {
+    width: 36px;
+    height: 36px;
   }
 
   .button-grid {

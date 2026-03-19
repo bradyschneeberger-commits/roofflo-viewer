@@ -109,6 +109,50 @@
     </aside>
 
     <section id="control-panel" aria-label="Workspace tools">
+      <div id="drawer-compact-rail" class="drawer-compact-rail" aria-label="Quick workspace controls">
+        <div class="drawer-compact-main" role="toolbar" aria-label="Tool dock">
+          <button id="btn-compact-setup" type="button" class="compact-icon-btn" aria-label="Open setup" title="Setup">
+            <span aria-hidden="true">◫</span>
+          </button>
+          <button id="btn-compact-placement" type="button" class="compact-icon-btn" aria-label="Vent placement quick actions" title="Vent Placement">
+            <span aria-hidden="true">⌂</span>
+          </button>
+          <button id="btn-compact-presets" type="button" class="compact-icon-btn" aria-label="Preset quick actions" title="Presets">
+            <span aria-hidden="true">☰</span>
+          </button>
+          <button id="btn-compact-snapshots" type="button" class="compact-icon-btn" aria-label="Open snapshots" title="Snapshots">
+            <span aria-hidden="true">◍</span>
+          </button>
+          <button id="btn-compact-open" type="button" class="compact-icon-btn compact-open-btn" aria-label="Open tool drawer" title="Open Drawer">
+            <span aria-hidden="true">⌃</span>
+          </button>
+        </div>
+
+        <div id="compact-quick-placement" class="compact-quick-actions" aria-label="Vent placement quick actions" hidden>
+          <button id="btn-quick-placement-intake" type="button" class="compact-quick-btn" aria-label="Activate intake vent placement" title="Intake Vent">
+            <span aria-hidden="true">I</span>
+          </button>
+          <button id="btn-quick-placement-static" type="button" class="compact-quick-btn" aria-label="Activate static vent placement" title="Static Vent">
+            <span aria-hidden="true">S</span>
+          </button>
+          <button id="btn-quick-placement-ridge" type="button" class="compact-quick-btn" aria-label="Activate ridge vent placement" title="Ridge Vent">
+            <span aria-hidden="true">R</span>
+          </button>
+        </div>
+
+        <div id="compact-quick-presets" class="compact-quick-actions" aria-label="Preset quick actions" hidden>
+          <button id="btn-quick-preset-intake" type="button" class="compact-quick-btn" aria-label="Apply intake only preset" title="Intake Only">
+            <span aria-hidden="true">I</span>
+          </button>
+          <button id="btn-quick-preset-exhaust" type="button" class="compact-quick-btn" aria-label="Apply exhaust only preset" title="Exhaust Only">
+            <span aria-hidden="true">E</span>
+          </button>
+          <button id="btn-quick-preset-balanced" type="button" class="compact-quick-btn" aria-label="Apply balanced preset" title="Balanced">
+            <span aria-hidden="true">B</span>
+          </button>
+        </div>
+      </div>
+
       <button id="controls-toggle" class="drawer-handle" type="button" aria-expanded="true" aria-controls="control-panel-content" aria-label="Toggle tool panel" title="Toggle Tool Panel">
         <span class="drawer-handle-bar" aria-hidden="true"></span>
       </button>
