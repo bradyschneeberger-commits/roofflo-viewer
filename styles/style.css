@@ -5,6 +5,7 @@
 :root {
 	--panel-gap: 16px;
 	--toolbar-height: 56px;
+	--snapshot-bar-height: 138px;
 	--panel-radius: 14px;
 	--panel-blur: 8px;
 	--panel-border: 1px solid rgba(15, 23, 42, 0.1);
@@ -177,6 +178,189 @@ body {
 	cursor: default;
 }
 
+#snapshot-bar {
+	position: fixed;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	height: var(--snapshot-bar-height);
+	padding: 8px 14px calc(8px + env(safe-area-inset-bottom));
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	background: linear-gradient(180deg, rgba(15, 23, 42, 0.35) 0%, rgba(15, 23, 42, 0.72) 100%);
+	border-top: 1px solid rgba(255, 255, 255, 0.14);
+	backdrop-filter: blur(8px);
+	-webkit-backdrop-filter: blur(8px);
+	z-index: 16;
+}
+
+.snapshot-bar-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+}
+
+.snapshot-bar-header h3 {
+	margin: 0;
+	font-size: 13px;
+	font-weight: 760;
+	letter-spacing: 0.02em;
+	color: rgba(226, 232, 240, 0.95);
+	text-transform: uppercase;
+}
+
+.snapshot-add-btn {
+	height: 30px;
+	padding: 0 10px;
+	border-radius: 8px;
+	border: 1px solid rgba(94, 234, 212, 0.48);
+	background: rgba(13, 148, 136, 0.36);
+	color: #ecfeff;
+	font-size: 12px;
+	font-weight: 700;
+	cursor: pointer;
+	transition: background-color 0.16s ease, border-color 0.16s ease;
+}
+
+.snapshot-add-btn:hover {
+	background: rgba(13, 148, 136, 0.54);
+	border-color: rgba(94, 234, 212, 0.72);
+}
+
+.snapshot-strip {
+	display: flex;
+	align-items: stretch;
+	gap: 8px;
+	overflow-x: auto;
+	overflow-y: hidden;
+	padding-bottom: 2px;
+	min-height: 0;
+	scrollbar-width: thin;
+}
+
+.snapshot-card {
+	width: 168px;
+	min-width: 168px;
+	padding: 8px;
+	border-radius: 10px;
+	border: 1px solid rgba(148, 163, 184, 0.34);
+	background: rgba(15, 23, 42, 0.64);
+	color: #e2e8f0;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	cursor: pointer;
+	transition: border-color 0.16s ease, background-color 0.16s ease, transform 0.12s ease;
+}
+
+.snapshot-card:focus-visible {
+	outline: 2px solid rgba(96, 165, 250, 0.74);
+	outline-offset: 2px;
+}
+
+.snapshot-card:hover {
+	border-color: rgba(148, 163, 184, 0.58);
+	background: rgba(30, 41, 59, 0.74);
+}
+
+.snapshot-card.is-active {
+	border-color: rgba(45, 212, 191, 0.74);
+	background: rgba(13, 148, 136, 0.22);
+	box-shadow: 0 0 0 1px rgba(45, 212, 191, 0.34) inset;
+}
+
+.snapshot-card.is-dragging {
+	opacity: 0.58;
+	transform: scale(0.98);
+}
+
+.snapshot-card.is-drop-target {
+	border-color: rgba(59, 130, 246, 0.82);
+	box-shadow: 0 0 0 1px rgba(96, 165, 250, 0.45) inset;
+}
+
+.snapshot-card-title {
+	font-size: 12px;
+	font-weight: 760;
+	line-height: 1.2;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.snapshot-title-input {
+	width: 100%;
+	height: 24px;
+	padding: 0 6px;
+	border-radius: 6px;
+	border: 1px solid rgba(96, 165, 250, 0.72);
+	background: rgba(15, 23, 42, 0.95);
+	color: #f8fafc;
+	font-size: 12px;
+	font-weight: 760;
+	outline: none;
+}
+
+.snapshot-title-input:focus {
+	box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.32);
+}
+
+.snapshot-card-meta {
+	font-size: 11px;
+	line-height: 1.3;
+	color: rgba(203, 213, 225, 0.9);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.snapshot-card-actions {
+	display: flex;
+	justify-content: space-between;
+	gap: 6px;
+	margin-top: auto;
+}
+
+.snapshot-card-btn {
+	flex: 1;
+	height: 24px;
+	padding: 0 6px;
+	border-radius: 6px;
+	border: 1px solid rgba(148, 163, 184, 0.3);
+	background: rgba(30, 41, 59, 0.68);
+	color: #e2e8f0;
+	font-size: 11px;
+	font-weight: 700;
+	cursor: pointer;
+}
+
+.snapshot-card-btn:hover {
+	border-color: rgba(148, 163, 184, 0.52);
+	background: rgba(51, 65, 85, 0.78);
+}
+
+.snapshot-card-btn.snapshot-card-btn-danger {
+	border-color: rgba(251, 113, 133, 0.36);
+	background: rgba(136, 19, 55, 0.4);
+	color: #ffe4e6;
+}
+
+.snapshot-empty {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-height: 68px;
+	padding: 0 12px;
+	border-radius: 10px;
+	border: 1px dashed rgba(148, 163, 184, 0.34);
+	color: rgba(203, 213, 225, 0.8);
+	font-size: 12px;
+	font-weight: 600;
+	white-space: nowrap;
+}
+
 #viewer.placement-active {
 	cursor: pointer;
 }
@@ -184,7 +368,7 @@ body {
 .vent-status-toast {
 	position: fixed;
 	left: 50%;
-	bottom: calc(14px + env(safe-area-inset-bottom));
+	bottom: calc(var(--snapshot-bar-height) + 12px + env(safe-area-inset-bottom));
 	transform: translate(-50%, 18px);
 	display: flex;
 	align-items: center;
@@ -637,6 +821,7 @@ select:focus {
 		--panel-gap: 12px;
 		--touch-height: 46px;
 		--toolbar-height: 54px;
+		--snapshot-bar-height: 132px;
 	}
 
 	#top-toolbar {
@@ -673,6 +858,7 @@ select:focus {
 	:root {
 		--panel-gap: 10px;
 		--toolbar-height: 52px;
+		--snapshot-bar-height: 126px;
 		--panel-radius: 16px;
 		--touch-height: 48px;
 		--panel-tab-size: 40px;
@@ -886,7 +1072,7 @@ select:focus {
 	}
 
 	.vent-status-toast {
-		bottom: calc(12px + env(safe-area-inset-bottom));
+		bottom: calc(var(--snapshot-bar-height) + 10px + env(safe-area-inset-bottom));
 		padding: 11px 12px;
 		gap: 10px;
 		max-width: calc(100vw - 20px);
@@ -912,6 +1098,7 @@ select:focus {
 @media (max-width: 480px) {
 	:root {
 		--toolbar-height: 50px;
+		--snapshot-bar-height: 118px;
 		--touch-height: 50px;
 		--panel-tab-height: 44px;
 		--mobile-drawer-width: min(260px, 72vw);

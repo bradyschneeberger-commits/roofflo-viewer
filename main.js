@@ -85,6 +85,9 @@ const toolbarBalancedButton = document.getElementById("btn-toolbar-balanced");
 const toolbarGridToggleButton = document.getElementById("btn-toolbar-grid-toggle");
 const toolbarStartButton = document.getElementById("btn-toolbar-start");
 const toolbarResetButton = document.getElementById("btn-toolbar-reset");
+const snapshotBar = document.getElementById("snapshot-bar");
+const snapshotStrip = document.getElementById("snapshot-strip");
+const snapshotAddButton = document.getElementById("btn-snapshot-add");
 
 const placementButtons = [
     { mode: PlacementMode.INTAKE, button: intakeVentButton },
@@ -101,8 +104,13 @@ let mobileUiState = {
 let userDismissedVentMessage = false;
 let lastVentStatusKey = null;
 let savedVentLayout = null;
+let currentLayoutSource = "unknown";
 let transientStatusTimer = null;
 let isGridVisible = true;
+let snapshotSlides = [];
+let activeSnapshotId = null;
+let snapshotSlideIdSeed = 1;
+let draggingSnapshotId = null;
 
 // Store selected ventilation rule for future calculations.
 let selectedVentilationRule = ventRuleSelect?.value || "1/150";
@@ -116,11 +124,583 @@ function toNumber(value, fallback) {
     return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function createSnapshotSlide(snapshot, options = {}) {
+    const normalized = coerceSnapshot(snapshot);
+    if (!normalized) {
+        return null;
+    }
+
+    const label = typeof options.label === "string" && options.label.trim()
+        ? options.label.trim()
+        : (normalized.meta?.label || `Slide ${snapshotSlideIdSeed}`);
+
+    return {
+        id: `snapshot-${snapshotSlideIdSeed++}`,
+        label,
+        snapshot: normalized
+    };
+}
+
+function getSnapshotCardDetails(snapshot) {
+    const geometry = snapshot.geometry || {};
+    const vents = snapshot.vents || {};
+    const intakeCount = Array.isArray(vents.intake) ? vents.intake.length : 0;
+    const staticCount = Array.isArray(vents.static) ? vents.static.length : 0;
+    const ridgeCount = Array.isArray(vents.ridge) ? vents.ridge.length : 0;
+    const rule = snapshot.ventilation?.rule || "1/150";
+
+    return {
+        topLine: `${geometry.width ?? 30}x${geometry.length ?? 50} ft • ${rule}`,
+        bottomLine: `I:${intakeCount} S:${staticCount} R:${ridgeCount}`
+    };
+}
+
+function setActiveSnapshotCard(snapshotId) {
+    activeSnapshotId = snapshotId;
+    renderSnapshotStrip();
+}
+
+function addSnapshotSlideFromCurrent(options = {}) {
+    const snapshot = createViewerSnapshot({ source: currentLayoutSource || "unknown" });
+    const slide = createSnapshotSlide(snapshot, options);
+    if (!slide) {
+        return false;
+    }
+
+    snapshotSlides.push(slide);
+    activeSnapshotId = slide.id;
+    savedVentLayout = slide.snapshot;
+    setRestoreAvailabilityUI();
+    renderSnapshotStrip();
+    return true;
+}
+
+function reorderSnapshotSlides(fromId, toId) {
+    const fromIndex = snapshotSlides.findIndex((slide) => slide.id === fromId);
+    const toIndex = snapshotSlides.findIndex((slide) => slide.id === toId);
+
+    if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) {
+        return;
+    }
+
+    const [moved] = snapshotSlides.splice(fromIndex, 1);
+    snapshotSlides.splice(toIndex, 0, moved);
+    renderSnapshotStrip();
+}
+
+function removeSnapshotSlide(snapshotId) {
+    const index = snapshotSlides.findIndex((slide) => slide.id === snapshotId);
+    if (index < 0) {
+        return;
+    }
+
+    snapshotSlides.splice(index, 1);
+
+    if (activeSnapshotId === snapshotId) {
+        activeSnapshotId = snapshotSlides[0]?.id || null;
+    }
+
+    if (!snapshotSlides.length) {
+        savedVentLayout = null;
+        setRestoreAvailabilityUI();
+    }
+
+    renderSnapshotStrip();
+}
+
+function renameSnapshotSlide(snapshotId, label) {
+    const slide = snapshotSlides.find((item) => item.id === snapshotId);
+    if (!slide) {
+        return false;
+    }
+
+    const nextLabel = typeof label === "string" ? label.trim() : "";
+    if (!nextLabel) {
+        return false;
+    }
+
+    slide.label = nextLabel;
+    renderSnapshotStrip();
+    return true;
+}
+
+function startSnapshotRename(slide, titleNode) {
+    if (!slide || !titleNode || titleNode.dataset.renaming === "true") {
+        return;
+    }
+
+    titleNode.dataset.renaming = "true";
+
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "snapshot-title-input";
+    input.value = slide.label;
+    input.maxLength = 120;
+
+    let finalized = false;
+    const finalize = (applyChanges) => {
+        if (finalized) {
+            return;
+        }
+
+        finalized = true;
+        titleNode.dataset.renaming = "false";
+
+        if (applyChanges) {
+            renameSnapshotSlide(slide.id, input.value);
+            return;
+        }
+
+        renderSnapshotStrip();
+    };
+
+    input.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+            event.preventDefault();
+            finalize(true);
+            return;
+        }
+
+        if (event.key === "Escape") {
+            event.preventDefault();
+            finalize(false);
+        }
+    });
+
+    input.addEventListener("click", (event) => {
+        event.stopPropagation();
+    });
+
+    input.addEventListener("blur", () => finalize(true));
+
+    titleNode.replaceWith(input);
+    input.focus();
+    input.select();
+}
+
+function nudgeActiveSnapshot(direction) {
+    if (!activeSnapshotId || snapshotSlides.length < 2) {
+        return;
+    }
+
+    const fromIndex = snapshotSlides.findIndex((slide) => slide.id === activeSnapshotId);
+    if (fromIndex < 0) {
+        return;
+    }
+
+    const toIndex = THREE.MathUtils.clamp(fromIndex + direction, 0, snapshotSlides.length - 1);
+    if (toIndex === fromIndex) {
+        return;
+    }
+
+    const fromSlideId = snapshotSlides[fromIndex].id;
+    const toSlideId = snapshotSlides[toIndex].id;
+    reorderSnapshotSlides(fromSlideId, toSlideId);
+    setActiveSnapshotCard(fromSlideId);
+}
+
+function isTypingTarget(target) {
+    if (!(target instanceof Element)) {
+        return false;
+    }
+
+    return Boolean(target.closest("input, textarea, select, [contenteditable='true']"));
+}
+
+function onSnapshotStripKeydown(event) {
+    if (isTypingTarget(event.target) || !snapshotSlides.length) {
+        return;
+    }
+
+    const isSnapshotContext = snapshotBar?.contains(event.target) || snapshotStrip?.contains(event.target);
+    if (!isSnapshotContext && !event.altKey) {
+        return;
+    }
+
+    if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        nudgeActiveSnapshot(-1);
+        return;
+    }
+
+    if (event.key === "ArrowRight") {
+        event.preventDefault();
+        nudgeActiveSnapshot(1);
+    }
+}
+
+function onSnapshotCardLoad(snapshotId) {
+    const slide = snapshotSlides.find((item) => item.id === snapshotId);
+    if (!slide) {
+        return;
+    }
+
+    const restored = restoreViewerSnapshot(slide.snapshot);
+    if (!restored) {
+        showTemporaryStatusMessage("Unable to restore selected snapshot", "warning", 1600);
+        return;
+    }
+
+    savedVentLayout = slide.snapshot;
+    setRestoreAvailabilityUI();
+    setActiveSnapshotCard(slide.id);
+    showTemporaryStatusMessage("Snapshot loaded", "info", 1200);
+}
+
+function renderSnapshotStrip() {
+    if (!snapshotStrip) {
+        return;
+    }
+
+    snapshotStrip.innerHTML = "";
+
+    if (!snapshotSlides.length) {
+        const empty = document.createElement("div");
+        empty.className = "snapshot-empty";
+        empty.textContent = "Save current setup to add your first slide";
+        snapshotStrip.appendChild(empty);
+        return;
+    }
+
+    for (const slide of snapshotSlides) {
+        const card = document.createElement("article");
+        card.className = "snapshot-card";
+        card.setAttribute("role", "listitem");
+        card.tabIndex = 0;
+        card.draggable = true;
+        card.dataset.snapshotId = slide.id;
+
+        if (slide.id === activeSnapshotId) {
+            card.classList.add("is-active");
+        }
+
+        const details = getSnapshotCardDetails(slide.snapshot);
+
+        const title = document.createElement("div");
+        title.className = "snapshot-card-title";
+        title.textContent = slide.label;
+        title.title = "Double-click to rename";
+        title.addEventListener("dblclick", (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            startSnapshotRename(slide, title);
+        });
+        card.appendChild(title);
+
+        const topMeta = document.createElement("div");
+        topMeta.className = "snapshot-card-meta";
+        topMeta.textContent = details.topLine;
+        card.appendChild(topMeta);
+
+        const bottomMeta = document.createElement("div");
+        bottomMeta.className = "snapshot-card-meta";
+        bottomMeta.textContent = details.bottomLine;
+        card.appendChild(bottomMeta);
+
+        const actions = document.createElement("div");
+        actions.className = "snapshot-card-actions";
+
+        const loadButton = document.createElement("button");
+        loadButton.type = "button";
+        loadButton.className = "snapshot-card-btn";
+        loadButton.textContent = "Load";
+        loadButton.addEventListener("click", (event) => {
+            event.stopPropagation();
+            onSnapshotCardLoad(slide.id);
+        });
+
+        const removeButton = document.createElement("button");
+        removeButton.type = "button";
+        removeButton.className = "snapshot-card-btn snapshot-card-btn-danger";
+        removeButton.textContent = "Remove";
+        removeButton.addEventListener("click", (event) => {
+            event.stopPropagation();
+            removeSnapshotSlide(slide.id);
+        });
+
+        actions.appendChild(loadButton);
+        actions.appendChild(removeButton);
+        card.appendChild(actions);
+
+        card.addEventListener("click", () => onSnapshotCardLoad(slide.id));
+        card.addEventListener("keydown", (event) => {
+            if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                onSnapshotCardLoad(slide.id);
+            }
+        });
+        card.addEventListener("dragstart", (event) => {
+            draggingSnapshotId = slide.id;
+            card.classList.add("is-dragging");
+            if (event.dataTransfer) {
+                event.dataTransfer.effectAllowed = "move";
+                event.dataTransfer.setData("text/plain", slide.id);
+            }
+        });
+        card.addEventListener("dragend", () => {
+            draggingSnapshotId = null;
+            card.classList.remove("is-dragging");
+            card.classList.remove("is-drop-target");
+            snapshotStrip.querySelectorAll(".snapshot-card.is-drop-target").forEach((node) => {
+                node.classList.remove("is-drop-target");
+            });
+        });
+        card.addEventListener("dragover", (event) => {
+            event.preventDefault();
+            if (draggingSnapshotId && draggingSnapshotId !== slide.id) {
+                card.classList.add("is-drop-target");
+            }
+        });
+        card.addEventListener("dragleave", () => {
+            card.classList.remove("is-drop-target");
+        });
+        card.addEventListener("drop", (event) => {
+            event.preventDefault();
+            card.classList.remove("is-drop-target");
+            const draggedId = event.dataTransfer?.getData("text/plain") || draggingSnapshotId;
+            if (draggedId && draggedId !== slide.id) {
+                reorderSnapshotSlides(draggedId, slide.id);
+            }
+        });
+
+        snapshotStrip.appendChild(card);
+    }
+}
+
 function getAirflowVentState() {
     return {
         intakeVents: getPlacedIntakeVents(),
         staticVents: getPlacedStaticVents(),
         ridgeVents: getPlacedRidgeVents()
+    };
+}
+
+function getSnapshotGeometryState() {
+    return {
+        width: Math.max(1, toNumber(houseWidthInput?.value, 30)),
+        length: Math.max(1, toNumber(houseLengthInput?.value, 50)),
+        pitch: Math.max(1, toNumber(roofPitchRiseInput?.value, 6)),
+        overhangDepth: Math.max(0, toNumber(overhangDepthInput?.value, 16))
+    };
+}
+
+function normalizeSnapshotMeta(meta, fallbackSource = "unknown") {
+    const source = meta?.source;
+    const normalizedSource = source === "manual" || source === "preset" || source === "unknown"
+        ? source
+        : fallbackSource;
+
+    return {
+        label: typeof meta?.label === "string" ? meta.label : null,
+        source: normalizedSource
+    };
+}
+
+function createViewerSnapshot({ label = null, source = null } = {}) {
+    const vents = exportCurrentVentLayout();
+
+    return {
+        version: 1,
+        createdAt: new Date().toISOString(),
+        geometry: getSnapshotGeometryState(),
+        ventilation: {
+            rule: selectedVentilationRule || "1/150"
+        },
+        vents: {
+            intake: Array.isArray(vents?.intake) ? vents.intake : [],
+            static: Array.isArray(vents?.static) ? vents.static : [],
+            ridge: Array.isArray(vents?.ridge) ? vents.ridge : []
+        },
+        meta: normalizeSnapshotMeta({
+            label,
+            source: source || currentLayoutSource || "unknown"
+        })
+    };
+}
+
+function isLegacyVentLayoutObject(value) {
+    if (!value || typeof value !== "object") {
+        return false;
+    }
+
+    return (
+        Array.isArray(value.intake) ||
+        Array.isArray(value.static) ||
+        Array.isArray(value.ridge)
+    );
+}
+
+function coerceSnapshot(snapshotCandidate) {
+    if (!snapshotCandidate || typeof snapshotCandidate !== "object") {
+        return null;
+    }
+
+    if (snapshotCandidate.version === 1 && snapshotCandidate.geometry && snapshotCandidate.vents) {
+        return {
+            version: 1,
+            createdAt: typeof snapshotCandidate.createdAt === "string"
+                ? snapshotCandidate.createdAt
+                : new Date().toISOString(),
+            geometry: {
+                width: Math.max(1, toNumber(snapshotCandidate.geometry.width, 30)),
+                length: Math.max(1, toNumber(snapshotCandidate.geometry.length, 50)),
+                pitch: Math.max(1, toNumber(snapshotCandidate.geometry.pitch, 6)),
+                overhangDepth: Math.max(0, toNumber(snapshotCandidate.geometry.overhangDepth, 16))
+            },
+            ventilation: {
+                rule: snapshotCandidate.ventilation?.rule === "1/300" ? "1/300" : "1/150"
+            },
+            vents: {
+                intake: Array.isArray(snapshotCandidate.vents?.intake) ? snapshotCandidate.vents.intake : [],
+                static: Array.isArray(snapshotCandidate.vents?.static) ? snapshotCandidate.vents.static : [],
+                ridge: Array.isArray(snapshotCandidate.vents?.ridge) ? snapshotCandidate.vents.ridge : []
+            },
+            meta: normalizeSnapshotMeta(snapshotCandidate.meta, "unknown")
+        };
+    }
+
+    if (isLegacyVentLayoutObject(snapshotCandidate)) {
+        return {
+            version: 1,
+            createdAt: new Date().toISOString(),
+            geometry: getSnapshotGeometryState(),
+            ventilation: {
+                rule: selectedVentilationRule || "1/150"
+            },
+            vents: {
+                intake: Array.isArray(snapshotCandidate.intake) ? snapshotCandidate.intake : [],
+                static: Array.isArray(snapshotCandidate.static) ? snapshotCandidate.static : [],
+                ridge: Array.isArray(snapshotCandidate.ridge) ? snapshotCandidate.ridge : []
+            },
+            meta: {
+                label: null,
+                source: "unknown"
+            }
+        };
+    }
+
+    return null;
+}
+
+function restoreViewerSnapshot(snapshotCandidate) {
+    const snapshot = coerceSnapshot(snapshotCandidate);
+    if (!snapshot) {
+        return false;
+    }
+
+    if (isSimulationRunning()) {
+        resetAirflowSimulation();
+    }
+
+    simulationState = SimulationState.IDLE;
+    activePlacementMode = PlacementMode.NONE;
+    pointerDownInfo = null;
+    cancelPendingRidgePlacement();
+    hideVentPreview();
+
+    if (houseWidthInput) {
+        houseWidthInput.value = String(snapshot.geometry.width);
+    }
+    if (houseLengthInput) {
+        houseLengthInput.value = String(snapshot.geometry.length);
+    }
+    if (roofPitchRiseInput) {
+        roofPitchRiseInput.value = String(snapshot.geometry.pitch);
+    }
+    if (overhangDepthInput) {
+        overhangDepthInput.value = String(snapshot.geometry.overhangDepth);
+    }
+
+    selectedVentilationRule = snapshot.ventilation?.rule === "1/300" ? "1/300" : "1/150";
+    if (ventRuleSelect) {
+        ventRuleSelect.value = selectedVentilationRule;
+    }
+
+    rebuildGeometryFromInputs();
+
+    const restored = restoreVentLayout({
+        intake: snapshot.vents.intake,
+        static: snapshot.vents.static,
+        ridge: snapshot.vents.ridge
+    });
+
+    if (!restored) {
+        return false;
+    }
+
+    currentLayoutSource = snapshot.meta?.source || "unknown";
+
+    updateSimulationButtonUI();
+    updatePlacementButtonUI();
+    refreshResultsPanel();
+    updateVentStatusMessage({ forceReveal: true });
+
+    return true;
+}
+
+function setSavedSnapshot(snapshotCandidate) {
+    const snapshot = coerceSnapshot(snapshotCandidate);
+    if (!snapshot) {
+        return false;
+    }
+
+    savedVentLayout = snapshot;
+    setRestoreAvailabilityUI();
+    return true;
+}
+
+function getSavedSnapshot() {
+    return savedVentLayout ? structuredClone(savedVentLayout) : null;
+}
+
+function exportSnapshotJson({ label = null, source = null, pretty = true } = {}) {
+    const snapshot = createViewerSnapshot({ label, source });
+    return JSON.stringify(snapshot, null, pretty ? 2 : 0);
+}
+
+function importSnapshotJson(jsonText, { restore = true, save = true } = {}) {
+    if (typeof jsonText !== "string" || !jsonText.trim()) {
+        return {
+            ok: false,
+            error: "Snapshot JSON text is required"
+        };
+    }
+
+    let parsed;
+    try {
+        parsed = JSON.parse(jsonText);
+    } catch (error) {
+        return {
+            ok: false,
+            error: "Invalid JSON"
+        };
+    }
+
+    const snapshot = coerceSnapshot(parsed);
+    if (!snapshot) {
+        return {
+            ok: false,
+            error: "Invalid snapshot schema"
+        };
+    }
+
+    if (save) {
+        setSavedSnapshot(snapshot);
+    }
+
+    if (restore) {
+        const restored = restoreViewerSnapshot(snapshot);
+        if (!restored) {
+            return {
+                ok: false,
+                error: "Snapshot restore failed"
+            };
+        }
+    }
+
+    return {
+        ok: true,
+        snapshot
     };
 }
 
@@ -517,6 +1097,7 @@ function rebuildGeometryFromInputs() {
 }
 
 function onGeometryInputChanged() {
+    currentLayoutSource = "manual";
     rebuildGeometryFromInputs();
     refreshResultsPanel();
     updateVentStatusMessage();
@@ -524,6 +1105,7 @@ function onGeometryInputChanged() {
 
 function onVentRuleChanged() {
     selectedVentilationRule = ventRuleSelect?.value || "1/150";
+    currentLayoutSource = "manual";
     refreshResultsPanel();
     updateVentStatusMessage();
 }
@@ -667,6 +1249,7 @@ function onViewerClicked(event) {
     }
 
     if (placed) {
+        currentLayoutSource = "manual";
         refreshResultsPanel();
         updateVentStatusMessage();
     }
@@ -724,6 +1307,7 @@ function onStartSimulationClicked() {
 
 function onResetClicked() {
     simulationState = SimulationState.RESET;
+    currentLayoutSource = "unknown";
     resetAirflowSimulation();
     clearAllVents();
     hideVentPreview();
@@ -741,7 +1325,7 @@ function onResetClicked() {
     }
 }
 
-function applyToolbarPreset(generator) {
+function applyToolbarPreset(generator, source = "preset") {
     if (typeof generator !== "function") {
         return;
     }
@@ -761,6 +1345,8 @@ function applyToolbarPreset(generator) {
         return;
     }
 
+    currentLayoutSource = source;
+
     updateSimulationButtonUI();
     updatePlacementButtonUI();
     refreshResultsPanel();
@@ -772,9 +1358,10 @@ function applyToolbarPreset(generator) {
 }
 
 function onSaveCurrentLayoutClicked() {
-    savedVentLayout = exportCurrentVentLayout();
+    savedVentLayout = createViewerSnapshot({ source: currentLayoutSource || "unknown" });
+    addSnapshotSlideFromCurrent();
     setRestoreAvailabilityUI();
-    showTemporaryStatusMessage("Current layout saved", "success", 1250);
+    showTemporaryStatusMessage("Snapshot saved", "success", 1250);
 
     if (!toolbarSaveCurrentButton) {
         return;
@@ -793,27 +1380,18 @@ function onRestoreCurrentLayoutClicked() {
         return;
     }
 
-    if (isSimulationRunning()) {
-        resetAirflowSimulation();
-    }
-
-    simulationState = SimulationState.IDLE;
-    activePlacementMode = PlacementMode.NONE;
-    pointerDownInfo = null;
-    cancelPendingRidgePlacement();
-    hideVentPreview();
-
-    const restored = restoreVentLayout(savedVentLayout);
+    const restored = restoreViewerSnapshot(savedVentLayout);
     if (!restored) {
-        showTemporaryStatusMessage("Unable to restore saved layout", "warning", 1600);
+        showTemporaryStatusMessage("Unable to restore saved snapshot", "warning", 1600);
         return;
     }
 
-    updateSimulationButtonUI();
-    updatePlacementButtonUI();
-    refreshResultsPanel();
-    updateVentStatusMessage({ forceReveal: true });
-    showTemporaryStatusMessage("Saved layout restored", "info", 1200);
+    showTemporaryStatusMessage("Snapshot restored", "info", 1200);
+
+    const matchingSlide = snapshotSlides.find((slide) => slide.snapshot?.createdAt === savedVentLayout?.createdAt);
+    if (matchingSlide) {
+        setActiveSnapshotCard(matchingSlide.id);
+    }
 
     if (isMobilePanelMode()) {
         openResultsPanel();
@@ -838,12 +1416,18 @@ resultsToggleButton?.addEventListener("click", toggleResultsPanel);
 ventStatusCloseButton?.addEventListener("click", dismissVentStatusMessage);
 toolbarSaveCurrentButton?.addEventListener("click", onSaveCurrentLayoutClicked);
 toolbarRestoreCurrentButton?.addEventListener("click", onRestoreCurrentLayoutClicked);
-toolbarIntakeOnlyButton?.addEventListener("click", () => applyToolbarPreset(generateIntakeOnlyPreset));
-toolbarExhaustOnlyButton?.addEventListener("click", () => applyToolbarPreset(generateExhaustOnlyPreset));
-toolbarBalancedButton?.addEventListener("click", () => applyToolbarPreset(() => generateBalancedPreset({ ventilationRule: selectedVentilationRule })));
+toolbarIntakeOnlyButton?.addEventListener("click", () => applyToolbarPreset(generateIntakeOnlyPreset, "preset"));
+toolbarExhaustOnlyButton?.addEventListener("click", () => applyToolbarPreset(generateExhaustOnlyPreset, "preset"));
+toolbarBalancedButton?.addEventListener("click", () => applyToolbarPreset(() => generateBalancedPreset({ ventilationRule: selectedVentilationRule }), "preset"));
 toolbarGridToggleButton?.addEventListener("click", onGridToggleClicked);
 toolbarStartButton?.addEventListener("click", onStartSimulationClicked);
 toolbarResetButton?.addEventListener("click", onResetClicked);
+snapshotAddButton?.addEventListener("click", () => {
+    const added = addSnapshotSlideFromCurrent();
+    if (added) {
+        showTemporaryStatusMessage("Snapshot added to strip", "success", 1200);
+    }
+});
 
 renderer.domElement.addEventListener("pointerdown", onViewerPointerDown);
 renderer.domElement.addEventListener("pointerup", onViewerClicked);
@@ -851,12 +1435,14 @@ renderer.domElement.addEventListener("pointermove", onViewerPointerMove);
 renderer.domElement.addEventListener("pointerleave", onViewerPointerLeave);
 
 window.addEventListener("resize", syncResponsiveUiState);
+window.addEventListener("keydown", onSnapshotStripKeydown);
 
 updateSimulationButtonUI();
 syncGridVisibilityUI();
 updatePlacementButtonUI();
 syncResponsiveUiState();
 setRestoreAvailabilityUI();
+renderSnapshotStrip();
 
 let lastAnimationTime = performance.now();
 
@@ -872,6 +1458,26 @@ function animate(now = performance.now()) {
 
 animate();
 
+if (typeof window !== "undefined") {
+    window.roofFloSnapshotApi = {
+        createSnapshot: (options = {}) => createViewerSnapshot(options),
+        restoreSnapshot: (snapshot) => restoreViewerSnapshot(snapshot),
+        setSavedSnapshot: (snapshot) => setSavedSnapshot(snapshot),
+        getSavedSnapshot: () => getSavedSnapshot(),
+        exportSnapshotJson: (options = {}) => exportSnapshotJson(options),
+        importSnapshotJson: (jsonText, options = {}) => importSnapshotJson(jsonText, options),
+        addSnapshotSlide: (options = {}) => addSnapshotSlideFromCurrent(options),
+        getSnapshotSlides: () => snapshotSlides.map((slide) => ({
+            id: slide.id,
+            label: slide.label,
+            snapshot: structuredClone(slide.snapshot)
+        })),
+        renameSnapshotSlide: (snapshotId, label) => renameSnapshotSlide(snapshotId, label),
+        reorderSnapshotSlides: (fromId, toId) => reorderSnapshotSlides(fromId, toId),
+        removeSnapshotSlide: (snapshotId) => removeSnapshotSlide(snapshotId)
+    };
+}
+
 const launchStartButton = document.getElementById("start-btn");
 const launchScreen = document.getElementById("launch-screen");
 
@@ -885,4 +1491,12 @@ if (launchStartButton && launchScreen) {
     });
 }
 
-export { selectedVentilationRule };
+export {
+    selectedVentilationRule,
+    createViewerSnapshot,
+    restoreViewerSnapshot,
+    setSavedSnapshot,
+    getSavedSnapshot,
+    exportSnapshotJson,
+    importSnapshotJson
+};
