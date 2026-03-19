@@ -1,12 +1,13 @@
-# RoofFlo V2 — Source of Truth
+# RoofFlo V3 — Source of Truth
 
 ## PURPOSE
-RoofFlo is an interactive 3D ventilation visualization tool designed to help roofing professionals explain attic airflow and ventilation systems to homeowners.
+RoofFlo is an interactive 3D ventilation visualization and sales tool designed to help roofing professionals explain attic airflow and recommend proper ventilation systems to homeowners.
 
-The system focuses on:
-- Education
-- Visualization
-- Sales support
+The system is built for:
+- Visual education
+- Sales presentation
+- Scenario comparison
+- Report generation (future phase)
 
 ---
 
@@ -17,262 +18,243 @@ The system focuses on:
 - Intake = eaves (lower roof edges)
 - Exhaust = ridge or high roof placement
 - Simulation is visual + educational (not CFD accurate)
-- User is allowed to build incorrect systems (we warn, not block)
+- Users can build incorrect systems (we warn, not block)
+- Viewer is state-driven (snapshot-based)
+
+---
+
+## SYSTEM ARCHITECTURE
+
+### Viewer Model
+RoofFlo uses a **single viewer architecture**.
+
+- One Three.js scene
+- Snapshots load into the same viewer
+- No multi-viewer system
+- Viewer acts as a **state renderer**, not a static scene
 
 ---
 
 ## CURRENT SYSTEM STATE
 
 ### GEOMETRY
-- Attic structure dynamically generated
-- Roof pitch controls attic height
-- Intake plenums exist on both eaves
-- Ridge is centered
+- Dynamic attic geometry
+- Pitch controls height
+- Intake plenums present
+- Ridge centered
 
-### VENT TYPES
+### VENT SYSTEM
+- Intake vents (snap to eaves)
+- Static vents (single slope constraint)
+- Ridge vents (continuous, dual-side visualization)
 
-#### Intake Vents
-- Placed along eaves
-- Snap to placement line
-- Represent air entering system
-
-#### Static Vents (Exhaust)
-- Placed on ONE roof slope only
-- Cannot exist on both slopes (warning triggered if attempted)
-- Represent point exhaust
-
-#### Ridge Vents
-- Continuous along ridge
-- Includes:
-  - center opening strip
-  - wider visual coverage strip
-
----
-
-## VENT PLACEMENT SYSTEM
-
+### PLACEMENT SYSTEM
 - Placement modes:
   - Intake
   - Static
   - Ridge
+- Snap alignment enabled
+- Clean placement behavior
 
-- Snapping:
-  - Vents snap to center alignment
-  - Prevent sloppy placement
-
----
-
-## CALCULATIONS
-
-### Inputs
-- House width
-- House length
-- Roof pitch
-- Overhang depth
-- Ventilation rule (e.g., 1/150)
-
-### Outputs
-- Attic area
-- Required ventilation (NFVA)
-- Required intake
-- Required exhaust
-- Installed intake
-- Installed exhaust
-- Intake difference
-- Exhaust difference
-- Status:
+### CALCULATIONS
+- NFVA based
+- Required vs installed
+- Intake / exhaust split
+- Status detection:
   - Under-ventilated
   - Intake deficient
   - Exhaust deficient
   - Balanced
 
----
-
-## PRESET SYSTEM
-
-### Available Presets
-- Intake Only
-- Exhaust Only
-- Balanced (needs refinement)
-
-### Rules
-- Presets must NEVER create invalid systems
-- Balanced preset should:
-  - approximate required intake/exhaust
-  - allow slight over/under (real-world tolerance)
+### AIRFLOW SYSTEM
+- Particle-based simulation
+- Stale air baseline
+- Fresh air introduction via intake
+- Exhaust removal behavior
+- Ridge deflection behavior implemented
+- Performance stabilized
 
 ---
 
-## AIRFLOW SIMULATION
+## SNAPSHOT SYSTEM (NEW CORE FEATURE)
 
-### Default State
-- Stale air particles present on load
-- Particles move randomly (no escape)
+### Concept
+Snapshots represent **viewer states**, not images.
 
-### Behavior Rules
+Each snapshot includes:
+- Geometry inputs
+- Vent layout
+- Ventilation rule
+- Metadata (optional)
 
-#### BEFORE simulation starts
-- Air does NOT interact with vents
-- System appears trapped
+Snapshots:
+- Can be saved
+- Can be restored
+- Rebuild the full viewer state
+- Can run simulation
 
-#### AFTER simulation starts
-- Intake introduces fresh air particles
-- Fresh air mixes with stale air
-- Fresh air gradually becomes stale
-- Exhaust allows air to exit
-
-### Particle System Rules
-- Maintain baseline stale air count
-- Allow particle cap before decay
-- Prevent system from “clearing out” unrealistically
-- Show inefficiency when only intake or only exhaust is present
-
----
-
-## VISUAL STATES (MESSAGING SYSTEM)
-
-Message box appears at bottom of screen.
-
-### States:
-
-#### No ventilation
-- Color: Transparent Red
-- Message: Hot, stale air is trapped
-
-#### Partial system (intake OR exhaust only)
-- Color: Transparent Orange
-- Message: Airflow is limited / ineffective
-
-#### Airflow present (not balanced)
-- Color: Transparent Blue
-- Message: Air is moving but not balanced
-
-#### Balanced system
-- Color: Transparent Green
-- Message: System is functioning properly
+### Purpose
+Snapshots act as:
+- Presentation slides
+- Scenario states
+- Report building blocks
 
 ---
 
-## WARNING SYSTEM
+## SNAPSHOT STRIP (BUILD MODE)
 
-Warnings DO NOT block user actions.
+- Bottom bar displays saved snapshots
+- Each snapshot is selectable
+- Active snapshot loads into viewer
+- Supports:
+  - Add snapshot
+  - Select snapshot
+  - Reorder (basic)
+  - Delete
 
-### Current Warnings
-- Static vents placed on both slopes (conflict risk)
-- Mixed exhaust types (future expansion)
-
-Purpose:
-- Allow real-world bad setups
-- Educate user why they are wrong
+This is the foundation of:
+- Presentation mode
+- Report workflow
+- Bubble integration
 
 ---
 
-## TOOLBAR (TOP)
+## CURRENT UI (TRANSITION STATE)
 
-### Current Controls
-- Save Current (placeholder)
-- Restore Current (placeholder)
-- Intake Only
-- Exhaust Only
-- Balanced
-- Grid toggle:
-  - "Grid" label + button
-  - Button switches between:
-    - Show
-    - Hide
+### Existing Layout (Being Replaced)
+- Left control panel
+- Right results panel
+- Top toolbar (text buttons)
+- Bottom snapshot bar (new)
 
+---
+
+## NEXT PHASE — WORKSPACE REFACTOR
+
+### TARGET UI MODEL
+
+#### Top Action Bar (Icon-Based)
 - Start Simulation
 - Reset
+- Grid Toggle
+- Save Snapshot
+- Results
+
+#### Bottom Tool Panel (Unified Panel)
+Tabbed system:
+- Setup
+- Vent Placement
+- Presets (Snapshots later)
+
+Mobile-style:
+- Slide-up / drawer behavior
+- Used across desktop + mobile
+
+#### Viewer Area
+- Primary focus
+- Clean, unobstructed
+- Central to experience
+
+#### Snapshot Strip
+- Remains at bottom
+- Works with new layout
+- Acts as slide builder
 
 ---
 
-## GRID SYSTEM
+## PRODUCT WORKFLOW (TARGET)
 
-- Visible by default
-- Toggleable via toolbar
-- Uses:
-  gridHelper.visible = true/false
+### Build Mode
+- User configures system
+- Saves snapshots
+- Builds sequence of scenarios
 
-- Grid is visual only
-- Does NOT affect logic or placement
+### Preview Mode (NEXT)
+- User reviews snapshots in order
+- Viewer loads each state
+- Minimal editing UI
 
----
-
-## CONTROL PANEL (LEFT)
-
-Contains:
-- House inputs
-- Vent placement controls
-
-### Future Improvements
-- Reduce width
-- Optional slide-in behavior (desktop)
-
----
-
-## RESULTS PANEL (RIGHT)
-
-Displays:
-- Ventilation calculations
-- System status
-
-### Future Improvements
-- Reduce width
-- Optional slide-in behavior
-
----
-
-## BUILDING FOOTPRINT
-
-- Roof is elevated above grid
-- Base extends downward (negative Y)
-- Used for visual realism only
-- Does NOT interact with:
-  - airflow
-  - vents
-  - calculations
-
----
-
-## CURRENT PRIORITIES (NEXT STEPS)
-
-### Step 12 — Balanced System Logic (NEXT)
-- Intake must scale properly with exhaust
-- Allow tolerance range (not exact match)
-- Closest real-world balance
-
-### Step 13 — Airflow Refinement (Optional)
-- Improve directional clarity
-- Fine-tune behavior differences
-
-### Step 14 — Preset Scenarios
-- Intake Only
-- Exhaust Only
-- Poor System (conflict example)
-- Balanced
-
----
-
-## FUTURE UI PHASE
-
-- Slim desktop panels
-- Slide-in panels (desktop)
-- Toolbar polish
-- Optional presentation mode
-- Optional light/dark scene modes
+### Present Mode (FUTURE)
+- Homeowner-facing experience
+- Clean UI
+- Guided storytelling
 
 ---
 
 ## PRODUCT DIRECTION
 
 RoofFlo is NOT:
-- a full roofing platform
+- a full roofing CRM
+- a measurement tool
+- a replacement for Roofr
 
 RoofFlo IS:
-- a ventilation visualization tool
-- a sales education tool
-- a system explanation engine
+- a ventilation visualization engine
+- a sales presentation tool
+- a scenario comparison system
 
-Future goal:
-- integrate with platforms like Roofr
-- not replace them
+---
+
+## DEVELOPMENT PHASES
+
+### Phase A — Core System (COMPLETE)
+- Geometry
+- Vent placement
+- Calculations
+- Airflow simulation
+
+### Phase B — Simulation + UX Stability (COMPLETE)
+- Airflow refinement
+- Performance improvements
+- Visual clarity improvements
+
+### Phase C — Sales System Layer (CURRENT)
+
+#### C1 — Workspace UI Refactor (IN PROGRESS)
+- Replace side panels
+- Add bottom tool panel
+- Convert toolbar to icon-based
+- Clean viewer focus
+
+#### C2 — Snapshot Workflow Expansion
+- Labeling
+- Ordering improvements
+- Slide behavior
+
+#### C3 — Preview Mode
+- Non-edit viewing
+- Snapshot playback
+
+#### C4 — Presentation Mode
+- Clean UI
+- Guided experience
+- Homeowner-ready
+
+---
+
+## FUTURE PHASES
+
+### Phase D — App Integration
+- Bubble workspace connection
+- Slide builder inside app
+- Report creation
+
+### Phase E — Sharing & Reports
+- Share links
+- PDF generation
+- Client-facing outputs
+
+### Phase F — Expansion
+- Additional roof types (hip, etc.)
+- More vent systems
+- Manufacturer integrations
+
+---
+
+## KEY PRINCIPLE MOVING FORWARD
+
+RoofFlo is now:
+> A state-driven visual presentation engine
+
+NOT:
+> A simple interactive viewer

@@ -25,164 +25,183 @@
     </div>
   </div>
 
-  <header id="top-toolbar" aria-label="Quick scenarios toolbar">
-    <div class="toolbar-group" aria-label="Preset scenarios">
-      <button id="btn-toolbar-save-current" type="button" class="toolbar-btn">Save Current</button>
-      <button id="btn-toolbar-restore-current" type="button" class="toolbar-btn" disabled>Restore Current</button>
-      <button id="btn-toolbar-intake-only" type="button" class="toolbar-btn">Intake Only</button>
-      <button id="btn-toolbar-exhaust-only" type="button" class="toolbar-btn">Exhaust Only</button>
-      <button id="btn-toolbar-balanced" type="button" class="toolbar-btn">Balanced</button>
-    </div>
-    <div class="toolbar-group toolbar-group-grid" aria-label="Grid visibility controls">
-      <span class="toolbar-label">Grid</span>
-      <button id="btn-toolbar-grid-toggle" type="button" class="toolbar-btn">Hide</button>
-    </div>
-    <div class="toolbar-group toolbar-group-actions" aria-label="Simulation actions">
-      <button id="btn-toolbar-start" type="button" class="toolbar-btn toolbar-btn-primary">Start Simulation</button>
-      <button id="btn-toolbar-reset" type="button" class="toolbar-btn toolbar-btn-danger">Reset</button>
-    </div>
-  </header>
+  <main id="workspace" aria-label="RoofFlo workspace">
+    <header id="top-toolbar" aria-label="Workspace actions">
+      <button id="btn-toolbar-start" type="button" class="workspace-action-btn is-primary" aria-label="Start simulation" title="Start Simulation">
+        <span class="workspace-action-icon" aria-hidden="true">▶</span>
+      </button>
+      <button id="btn-toolbar-reset" type="button" class="workspace-action-btn is-danger" aria-label="Reset simulation and vents" title="Reset">
+        <span class="workspace-action-icon" aria-hidden="true">↺</span>
+      </button>
+      <button id="btn-toolbar-grid-toggle" type="button" class="workspace-action-btn" aria-label="Toggle grid visibility" title="Toggle Grid">
+        <span class="workspace-action-icon" aria-hidden="true">#</span>
+      </button>
+      <button id="btn-toolbar-save-current" type="button" class="workspace-action-btn" aria-label="Save snapshot" title="Save Snapshot">
+        <span class="workspace-action-icon" aria-hidden="true">⬒</span>
+      </button>
+      <button id="btn-toolbar-results" type="button" class="workspace-action-btn" aria-label="Toggle results panel" title="Results">
+        <span class="workspace-action-icon" aria-hidden="true">Σ</span>
+      </button>
+      <button id="btn-toolbar-restore-current" type="button" class="toolbar-hidden-accessory" disabled aria-hidden="true" tabindex="-1">Restore</button>
+    </header>
 
-  <aside id="control-panel" aria-label="RoofFlo controls">
-    <button id="controls-toggle" class="panel-toggle panel-toggle-controls" type="button" aria-expanded="false" aria-controls="control-panel-content">
-      <span class="panel-toggle-label">Controls</span>
-      <span class="panel-toggle-icon" aria-hidden="true"></span>
-    </button>
+    <canvas id="viewer"></canvas>
 
-    <div id="control-panel-content" class="panel-content">
-    <h1>RoofFlo V2</h1>
+    <aside id="results-panel" aria-label="Ventilation results" aria-hidden="true">
+      <div id="results-panel-content" class="results-overlay-content">
+        <div class="results-overlay-header">
+          <h2>Results</h2>
+          <button id="results-toggle" class="results-close-btn" type="button" aria-label="Close results" title="Close Results">×</button>
+        </div>
 
-    <div class="field-group">
-      <label for="house-width">House Width</label>
-      <div class="input-row">
-        <input id="house-width" type="number" min="1" step="0.1" value="30">
-        <span class="unit">ft</span>
+        <div class="results-grid">
+          <div class="result-row">
+            <span class="result-label">Attic Area</span>
+            <span id="result-attic-area" class="result-value">0.0 sq ft</span>
+          </div>
+
+          <div class="result-row">
+            <span class="result-label">Ventilation Rule</span>
+            <span id="result-rule" class="result-value">1/150</span>
+          </div>
+
+          <div class="result-row">
+            <span class="result-label">Required Ventilation</span>
+            <span id="result-required-total" class="result-value">0.0 in² NFVA</span>
+          </div>
+
+          <div class="result-row">
+            <span class="result-label">Required Intake</span>
+            <span id="result-required-intake" class="result-value">0.0 in² NFVA</span>
+          </div>
+
+          <div class="result-row">
+            <span class="result-label">Required Exhaust</span>
+            <span id="result-required-exhaust" class="result-value">0.0 in² NFVA</span>
+          </div>
+
+          <div class="result-row">
+            <span class="result-label">Installed Intake</span>
+            <span id="result-installed-intake" class="result-value">0.0 in² NFVA</span>
+          </div>
+
+          <div class="result-row">
+            <span class="result-label">Installed Exhaust</span>
+            <span id="result-installed-exhaust" class="result-value">0.0 in² NFVA</span>
+          </div>
+
+          <div class="result-row">
+            <span class="result-label">Intake Difference</span>
+            <span id="result-intake-diff" class="result-value">0.0 in² NFVA</span>
+          </div>
+
+          <div class="result-row">
+            <span class="result-label">Exhaust Difference</span>
+            <span id="result-exhaust-diff" class="result-value">0.0 in² NFVA</span>
+          </div>
+
+          <div class="result-row result-row-status">
+            <span class="result-label">Status</span>
+            <span id="result-status" class="result-value result-status">Under-ventilated</span>
+          </div>
+        </div>
       </div>
-    </div>
+    </aside>
 
-    <div class="field-group">
-      <label for="house-length">House Length</label>
-      <div class="input-row">
-        <input id="house-length" type="number" min="1" step="0.1" value="50">
-        <span class="unit">ft</span>
-      </div>
-    </div>
+    <section id="control-panel" aria-label="Workspace tools">
+      <button id="controls-toggle" class="drawer-handle" type="button" aria-expanded="true" aria-controls="control-panel-content" aria-label="Toggle tool panel" title="Toggle Tool Panel">
+        <span class="drawer-handle-bar" aria-hidden="true"></span>
+      </button>
 
-    <div class="field-group">
-      <label for="roof-pitch-rise">Roof Pitch</label>
-      <div class="input-row pitch-row">
-        <input id="roof-pitch-rise" type="number" min="1" step="0.1" value="6">
-        <span class="pitch-divider">/ 12</span>
-      </div>
-    </div>
-
-    <div class="field-group">
-      <label for="overhang-depth">Overhang Depth</label>
-      <div class="input-row">
-        <input id="overhang-depth" type="number" min="0" step="0.1" value="16">
-        <span class="unit">in</span>
-      </div>
-    </div>
-
-    <div class="field-group">
-      <label for="vent-rule">Ventilation Rule</label>
-      <div class="input-row">
-        <select id="vent-rule">
-          <option value="1/150" selected>1/150</option>
-          <option value="1/300">1/300</option>
-        </select>
-      </div>
-    </div>
-
-    <div class="field-group control-group">
-      <label>Vent Placement</label>
-      <div class="button-grid">
-        <button id="btn-intake-vent" type="button" class="control-btn">Intake Vent</button>
-        <button id="btn-static-vent" type="button" class="control-btn">Static Vent</button>
-        <button id="btn-ridge-vent" type="button" class="control-btn">Ridge Vent</button>
-      </div>
-    </div>
-
-    </div>
-  </aside>
-
-  <aside id="results-panel" aria-label="Ventilation results">
-    <button id="results-toggle" class="panel-toggle panel-toggle-results" type="button" aria-expanded="false" aria-controls="results-panel-content">
-      <span class="panel-toggle-label">Results</span>
-      <span class="panel-toggle-icon" aria-hidden="true"></span>
-    </button>
-
-    <div id="results-panel-content" class="panel-content">
-    <h2>Results</h2>
-
-    <div class="results-grid">
-      <div class="result-row">
-        <span class="result-label">Attic Area</span>
-        <span id="result-attic-area" class="result-value">0.0 sq ft</span>
-      </div>
-
-      <div class="result-row">
-        <span class="result-label">Ventilation Rule</span>
-        <span id="result-rule" class="result-value">1/150</span>
+      <div class="workspace-tabs" role="tablist" aria-label="Workspace tabs">
+        <button id="tab-setup" class="workspace-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="tab-panel-setup" data-tab="setup">Setup</button>
+        <button id="tab-placement" class="workspace-tab" type="button" role="tab" aria-selected="false" aria-controls="tab-panel-placement" data-tab="placement">Vent Placement</button>
+        <button id="tab-presets" class="workspace-tab" type="button" role="tab" aria-selected="false" aria-controls="tab-panel-presets" data-tab="presets">Presets</button>
+        <button id="tab-snapshots" class="workspace-tab" type="button" role="tab" aria-selected="false" aria-controls="tab-panel-snapshots" data-tab="snapshots">Snapshots</button>
       </div>
 
-      <div class="result-row">
-        <span class="result-label">Required Ventilation</span>
-        <span id="result-required-total" class="result-value">0.0 in² NFVA</span>
-      </div>
+      <div id="control-panel-content" class="workspace-tab-panels">
+        <section id="tab-panel-setup" class="workspace-tab-panel is-active" role="tabpanel" aria-labelledby="tab-setup" data-panel="setup">
+          <div class="field-group">
+            <label for="house-width">House Width</label>
+            <div class="input-row">
+              <input id="house-width" type="number" min="1" step="0.1" value="30">
+              <span class="unit">ft</span>
+            </div>
+          </div>
 
-      <div class="result-row">
-        <span class="result-label">Required Intake</span>
-        <span id="result-required-intake" class="result-value">0.0 in² NFVA</span>
-      </div>
+          <div class="field-group">
+            <label for="house-length">House Length</label>
+            <div class="input-row">
+              <input id="house-length" type="number" min="1" step="0.1" value="50">
+              <span class="unit">ft</span>
+            </div>
+          </div>
 
-      <div class="result-row">
-        <span class="result-label">Required Exhaust</span>
-        <span id="result-required-exhaust" class="result-value">0.0 in² NFVA</span>
-      </div>
+          <div class="field-group">
+            <label for="roof-pitch-rise">Roof Pitch</label>
+            <div class="input-row pitch-row">
+              <input id="roof-pitch-rise" type="number" min="1" step="0.1" value="6">
+              <span class="pitch-divider">/ 12</span>
+            </div>
+          </div>
 
-      <div class="result-row">
-        <span class="result-label">Installed Intake</span>
-        <span id="result-installed-intake" class="result-value">0.0 in² NFVA</span>
-      </div>
+          <div class="field-group">
+            <label for="overhang-depth">Overhang Depth</label>
+            <div class="input-row">
+              <input id="overhang-depth" type="number" min="0" step="0.1" value="16">
+              <span class="unit">in</span>
+            </div>
+          </div>
 
-      <div class="result-row">
-        <span class="result-label">Installed Exhaust</span>
-        <span id="result-installed-exhaust" class="result-value">0.0 in² NFVA</span>
-      </div>
+          <div class="field-group">
+            <label for="vent-rule">Ventilation Rule</label>
+            <div class="input-row">
+              <select id="vent-rule">
+                <option value="1/150" selected>1/150</option>
+                <option value="1/300">1/300</option>
+              </select>
+            </div>
+          </div>
+        </section>
 
-      <div class="result-row">
-        <span class="result-label">Intake Difference</span>
-        <span id="result-intake-diff" class="result-value">0.0 in² NFVA</span>
-      </div>
+        <section id="tab-panel-placement" class="workspace-tab-panel" role="tabpanel" aria-labelledby="tab-placement" data-panel="placement" hidden>
+          <div class="field-group control-group">
+            <label>Vent Placement</label>
+            <div class="button-grid">
+              <button id="btn-intake-vent" type="button" class="control-btn">Intake Vent</button>
+              <button id="btn-static-vent" type="button" class="control-btn">Static Vent</button>
+              <button id="btn-ridge-vent" type="button" class="control-btn">Ridge Vent</button>
+            </div>
+          </div>
+        </section>
 
-      <div class="result-row">
-        <span class="result-label">Exhaust Difference</span>
-        <span id="result-exhaust-diff" class="result-value">0.0 in² NFVA</span>
-      </div>
+        <section id="tab-panel-presets" class="workspace-tab-panel" role="tabpanel" aria-labelledby="tab-presets" data-panel="presets" hidden>
+          <div class="field-group control-group">
+            <label>Preset Layouts</label>
+            <div class="button-grid">
+              <button id="btn-toolbar-intake-only" type="button" class="control-btn">Intake Only</button>
+              <button id="btn-toolbar-exhaust-only" type="button" class="control-btn">Exhaust Only</button>
+              <button id="btn-toolbar-balanced" type="button" class="control-btn">Balanced</button>
+            </div>
+          </div>
+        </section>
 
-      <div class="result-row result-row-status">
-        <span class="result-label">Status</span>
-        <span id="result-status" class="result-value result-status">Under-ventilated</span>
+        <section id="tab-panel-snapshots" class="workspace-tab-panel" role="tabpanel" aria-labelledby="tab-snapshots" data-panel="snapshots" hidden>
+          <div class="snapshot-panel-header">
+            <h3>Snapshots</h3>
+            <button id="btn-snapshot-add" type="button" class="snapshot-add-btn">Add Snapshot</button>
+          </div>
+          <div id="snapshot-strip" class="snapshot-strip" role="list"></div>
+        </section>
       </div>
-    </div>
-    </div>
-  </aside>
-
-  <canvas id="viewer"></canvas>
+    </section>
+  </main>
 
   <div id="vent-status-toast" class="vent-status-toast" aria-live="polite" aria-hidden="true">
     <p id="vent-status-message">Hot, stale air is trapped in the attic</p>
     <button id="vent-status-close" type="button" aria-label="Dismiss ventilation status message">×</button>
   </div>
-
-  <section id="snapshot-bar" aria-label="Snapshot strip">
-    <div class="snapshot-bar-header">
-      <h3>Snapshots</h3>
-      <button id="btn-snapshot-add" type="button" class="snapshot-add-btn">Add Snapshot</button>
-    </div>
-    <div id="snapshot-strip" class="snapshot-strip" role="list"></div>
-  </section>
 
   <script type="module" src="main.js"></script>
 </body>

@@ -85,9 +85,11 @@ const toolbarBalancedButton = document.getElementById("btn-toolbar-balanced");
 const toolbarGridToggleButton = document.getElementById("btn-toolbar-grid-toggle");
 const toolbarStartButton = document.getElementById("btn-toolbar-start");
 const toolbarResetButton = document.getElementById("btn-toolbar-reset");
-const snapshotBar = document.getElementById("snapshot-bar");
+const toolbarResultsButton = document.getElementById("btn-toolbar-results");
 const snapshotStrip = document.getElementById("snapshot-strip");
 const snapshotAddButton = document.getElementById("btn-snapshot-add");
+const workspaceTabButtons = Array.from(document.querySelectorAll(".workspace-tab"));
+const workspaceTabPanels = Array.from(document.querySelectorAll(".workspace-tab-panel"));
 
 const placementButtons = [
     { mode: PlacementMode.INTAKE, button: intakeVentButton },
@@ -97,16 +99,18 @@ const placementButtons = [
 
 let simulationState = SimulationState.IDLE;
 let activePlacementMode = PlacementMode.NONE;
-let mobileUiState = {
-    controlsOpen: false,
-    resultsOpen: false
+let workspaceUiState = {
+    activeWorkspaceTab: "setup",
+    isToolPanelExpanded: true,
+    isResultsOpen: false,
+    isGridVisible: true,
+    isSnapshotSaveAnimating: false
 };
 let userDismissedVentMessage = false;
 let lastVentStatusKey = null;
 let savedVentLayout = null;
 let currentLayoutSource = "unknown";
 let transientStatusTimer = null;
-let isGridVisible = true;
 let snapshotSlides = [];
 let activeSnapshotId = null;
 let snapshotSlideIdSeed = 1;
@@ -288,7 +292,7 @@ function nudgeActiveSnapshot(direction) {
         return;
     }
 
-    const toIndex = THREE.MathUtils.clamp(fromIndex + direction, 0, snapshotSlides.length - 1);
+    const toIndex = Math.max(0, Math.min(snapshotSlides.length - 1, fromIndex + direction));
     if (toIndex === fromIndex) {
         return;
     }
@@ -312,7 +316,7 @@ function onSnapshotStripKeydown(event) {
         return;
     }
 
-    const isSnapshotContext = snapshotBar?.contains(event.target) || snapshotStrip?.contains(event.target);
+    const isSnapshotContext = controlPanel?.contains(event.target) || snapshotStrip?.contains(event.target);
     if (!isSnapshotContext && !event.altKey) {
         return;
     }
@@ -709,114 +713,80 @@ function updateSimulationButtonUI() {
 
     if (toolbarStartButton) {
         toolbarStartButton.disabled = running;
-        toolbarStartButton.textContent = running ? "Simulation Running" : "Start Simulation";
+        toolbarStartButton.classList.toggle("is-active", running);
+        toolbarStartButton.setAttribute("aria-label", running ? "Simulation running" : "Start simulation");
+        toolbarStartButton.setAttribute("title", running ? "Simulation Running" : "Start Simulation");
     }
 }
 
 function syncGridVisibilityUI() {
-    gridHelper.visible = isGridVisible;
+    gridHelper.visible = workspaceUiState.isGridVisible;
 
     if (!toolbarGridToggleButton) {
         return;
     }
 
-    toolbarGridToggleButton.textContent = isGridVisible ? "Hide" : "Show";
-    toolbarGridToggleButton.setAttribute("aria-label", isGridVisible ? "Hide grid" : "Show grid");
+    toolbarGridToggleButton.classList.toggle("is-active", workspaceUiState.isGridVisible);
+    toolbarGridToggleButton.setAttribute("aria-label", workspaceUiState.isGridVisible ? "Hide grid" : "Show grid");
+    toolbarGridToggleButton.setAttribute("title", workspaceUiState.isGridVisible ? "Hide Grid" : "Show Grid");
 }
 
 function onGridToggleClicked() {
-    isGridVisible = !isGridVisible;
+    workspaceUiState.isGridVisible = !workspaceUiState.isGridVisible;
     syncGridVisibilityUI();
 }
 
-function isMobilePanelMode() {
-    return window.matchMedia("(max-width: 768px)").matches;
+function setWorkspaceTab(tab) {
+    workspaceUiState.activeWorkspaceTab = tab;
+
+    for (const button of workspaceTabButtons) {
+        const isActive = button.dataset.tab === tab;
+        button.classList.toggle("is-active", isActive);
+        button.setAttribute("aria-selected", isActive ? "true" : "false");
+    }
+
+    for (const panel of workspaceTabPanels) {
+        const isActive = panel.dataset.panel === tab;
+        panel.classList.toggle("is-active", isActive);
+        panel.hidden = !isActive;
+    }
 }
 
-function updatePanelToggleUI() {
-    if (!controlPanel || !resultsPanel || !controlsToggleButton || !resultsToggleButton) {
+function syncWorkspaceUiState() {
+    if (!controlPanel || !resultsPanel || !controlsToggleButton) {
         return;
     }
 
-    const mobileMode = isMobilePanelMode();
-    const controlsOpen = mobileMode ? mobileUiState.controlsOpen : true;
-    const resultsOpen = mobileMode ? mobileUiState.resultsOpen : true;
+    controlPanel.classList.toggle("is-collapsed", !workspaceUiState.isToolPanelExpanded);
+    resultsPanel.classList.toggle("is-open", workspaceUiState.isResultsOpen);
+    resultsPanel.setAttribute("aria-hidden", workspaceUiState.isResultsOpen ? "false" : "true");
 
-    controlPanel.classList.toggle("is-open", controlsOpen);
-    resultsPanel.classList.toggle("is-open", resultsOpen);
-
-    controlsToggleButton.setAttribute("aria-expanded", controlsOpen ? "true" : "false");
-    resultsToggleButton.setAttribute("aria-expanded", resultsOpen ? "true" : "false");
+    controlsToggleButton.setAttribute("aria-expanded", workspaceUiState.isToolPanelExpanded ? "true" : "false");
+    controlsToggleButton.setAttribute("title", workspaceUiState.isToolPanelExpanded ? "Collapse Tool Panel" : "Expand Tool Panel");
+    if (toolbarResultsButton) {
+        toolbarResultsButton.classList.toggle("is-active", workspaceUiState.isResultsOpen);
+        toolbarResultsButton.setAttribute("aria-pressed", workspaceUiState.isResultsOpen ? "true" : "false");
+    }
 }
 
-function openControlsPanel() {
-    if (!isMobilePanelMode()) {
-        return;
-    }
-
-    mobileUiState.controlsOpen = true;
-    mobileUiState.resultsOpen = false;
-    updatePanelToggleUI();
+function toggleToolPanel() {
+    workspaceUiState.isToolPanelExpanded = !workspaceUiState.isToolPanelExpanded;
+    syncWorkspaceUiState();
 }
 
 function openResultsPanel() {
-    if (!isMobilePanelMode()) {
-        return;
-    }
-
-    mobileUiState.controlsOpen = false;
-    mobileUiState.resultsOpen = true;
-    updatePanelToggleUI();
+    workspaceUiState.isResultsOpen = true;
+    syncWorkspaceUiState();
 }
 
-function closeAllPanels() {
-    if (!isMobilePanelMode()) {
-        return;
-    }
-
-    mobileUiState.controlsOpen = false;
-    mobileUiState.resultsOpen = false;
-    updatePanelToggleUI();
-}
-
-function toggleControlsPanel() {
-    if (!isMobilePanelMode()) {
-        return;
-    }
-
-    if (mobileUiState.controlsOpen) {
-        closeAllPanels();
-        return;
-    }
-
-    openControlsPanel();
+function closeResultsPanel() {
+    workspaceUiState.isResultsOpen = false;
+    syncWorkspaceUiState();
 }
 
 function toggleResultsPanel() {
-    if (!isMobilePanelMode()) {
-        return;
-    }
-
-    if (mobileUiState.resultsOpen) {
-        closeAllPanels();
-        return;
-    }
-
-    openResultsPanel();
-}
-
-function syncResponsiveUiState() {
-    if (isMobilePanelMode()) {
-        if (!mobileUiState.controlsOpen && !mobileUiState.resultsOpen) {
-            mobileUiState.controlsOpen = true;
-            mobileUiState.resultsOpen = false;
-        }
-    } else {
-        mobileUiState.controlsOpen = false;
-        mobileUiState.resultsOpen = false;
-    }
-
-    updatePanelToggleUI();
+    workspaceUiState.isResultsOpen = !workspaceUiState.isResultsOpen;
+    syncWorkspaceUiState();
 }
 
 function formatSqFt(value) {
@@ -1297,10 +1267,7 @@ function onStartSimulationClicked() {
     hideVentPreview();
     updateSimulationButtonUI();
     updatePlacementButtonUI();
-
-    if (isMobilePanelMode()) {
-        openResultsPanel();
-    }
+    openResultsPanel();
 
     updateVentStatusMessage({ forceReveal: true });
 }
@@ -1319,10 +1286,6 @@ function onResetClicked() {
     updatePlacementButtonUI();
     refreshResultsPanel();
     updateVentStatusMessage({ forceReveal: true });
-
-    if (isMobilePanelMode()) {
-        openControlsPanel();
-    }
 }
 
 function applyToolbarPreset(generator, source = "preset") {
@@ -1351,27 +1314,48 @@ function applyToolbarPreset(generator, source = "preset") {
     updatePlacementButtonUI();
     refreshResultsPanel();
     updateVentStatusMessage({ forceReveal: true });
+}
 
-    if (isMobilePanelMode()) {
-        openResultsPanel();
+function playSnapshotSaveAnimation() {
+    if (workspaceUiState.isSnapshotSaveAnimating || !toolbarSaveCurrentButton || !controlPanel) {
+        return;
     }
+
+    workspaceUiState.isSnapshotSaveAnimating = true;
+
+    const startRect = toolbarSaveCurrentButton.getBoundingClientRect();
+    const endRect = controlPanel.getBoundingClientRect();
+    const ghost = document.createElement("div");
+    ghost.className = "snapshot-save-ghost";
+    ghost.style.left = `${startRect.left + (startRect.width * 0.5) - 55}px`;
+    ghost.style.top = `${startRect.top + (startRect.height * 0.5) - 35}px`;
+
+    const dx = (endRect.left + (endRect.width * 0.5)) - (startRect.left + (startRect.width * 0.5));
+    const dy = (endRect.top + 34) - (startRect.top + (startRect.height * 0.5));
+    ghost.style.setProperty("--dx", `${dx}px`);
+    ghost.style.setProperty("--dy", `${dy}px`);
+
+    document.body.appendChild(ghost);
+
+    requestAnimationFrame(() => {
+        ghost.classList.add("is-animating");
+    });
+
+    window.setTimeout(() => {
+        ghost.remove();
+        workspaceUiState.isSnapshotSaveAnimating = false;
+    }, 620);
 }
 
 function onSaveCurrentLayoutClicked() {
     savedVentLayout = createViewerSnapshot({ source: currentLayoutSource || "unknown" });
     addSnapshotSlideFromCurrent();
+    setWorkspaceTab("snapshots");
+    workspaceUiState.isToolPanelExpanded = true;
+    syncWorkspaceUiState();
+    playSnapshotSaveAnimation();
     setRestoreAvailabilityUI();
     showTemporaryStatusMessage("Snapshot saved", "success", 1250);
-
-    if (!toolbarSaveCurrentButton) {
-        return;
-    }
-
-    const originalText = toolbarSaveCurrentButton.textContent;
-    toolbarSaveCurrentButton.textContent = "Saved";
-    window.setTimeout(() => {
-        toolbarSaveCurrentButton.textContent = originalText || "Save Current";
-    }, 1200);
 }
 
 function onRestoreCurrentLayoutClicked() {
@@ -1392,10 +1376,6 @@ function onRestoreCurrentLayoutClicked() {
     if (matchingSlide) {
         setActiveSnapshotCard(matchingSlide.id);
     }
-
-    if (isMobilePanelMode()) {
-        openResultsPanel();
-    }
 }
 
 // Build default geometry on load.
@@ -1411,7 +1391,7 @@ ventRuleSelect?.addEventListener("change", onVentRuleChanged);
 intakeVentButton?.addEventListener("click", () => setPlacementMode(PlacementMode.INTAKE));
 staticVentButton?.addEventListener("click", () => setPlacementMode(PlacementMode.STATIC));
 ridgeVentButton?.addEventListener("click", () => setPlacementMode(PlacementMode.RIDGE));
-controlsToggleButton?.addEventListener("click", toggleControlsPanel);
+controlsToggleButton?.addEventListener("click", toggleToolPanel);
 resultsToggleButton?.addEventListener("click", toggleResultsPanel);
 ventStatusCloseButton?.addEventListener("click", dismissVentStatusMessage);
 toolbarSaveCurrentButton?.addEventListener("click", onSaveCurrentLayoutClicked);
@@ -1422,25 +1402,42 @@ toolbarBalancedButton?.addEventListener("click", () => applyToolbarPreset(() => 
 toolbarGridToggleButton?.addEventListener("click", onGridToggleClicked);
 toolbarStartButton?.addEventListener("click", onStartSimulationClicked);
 toolbarResetButton?.addEventListener("click", onResetClicked);
+toolbarResultsButton?.addEventListener("click", toggleResultsPanel);
 snapshotAddButton?.addEventListener("click", () => {
     const added = addSnapshotSlideFromCurrent();
     if (added) {
-        showTemporaryStatusMessage("Snapshot added to strip", "success", 1200);
+        setWorkspaceTab("snapshots");
+        workspaceUiState.isToolPanelExpanded = true;
+        syncWorkspaceUiState();
+        showTemporaryStatusMessage("Snapshot added", "success", 1200);
     }
 });
+
+for (const tabButton of workspaceTabButtons) {
+    tabButton.addEventListener("click", () => {
+        const tab = tabButton.dataset.tab;
+        if (!tab) {
+            return;
+        }
+
+        setWorkspaceTab(tab);
+        workspaceUiState.isToolPanelExpanded = true;
+        syncWorkspaceUiState();
+    });
+}
 
 renderer.domElement.addEventListener("pointerdown", onViewerPointerDown);
 renderer.domElement.addEventListener("pointerup", onViewerClicked);
 renderer.domElement.addEventListener("pointermove", onViewerPointerMove);
 renderer.domElement.addEventListener("pointerleave", onViewerPointerLeave);
 
-window.addEventListener("resize", syncResponsiveUiState);
 window.addEventListener("keydown", onSnapshotStripKeydown);
 
 updateSimulationButtonUI();
 syncGridVisibilityUI();
 updatePlacementButtonUI();
-syncResponsiveUiState();
+setWorkspaceTab(workspaceUiState.activeWorkspaceTab);
+syncWorkspaceUiState();
 setRestoreAvailabilityUI();
 renderSnapshotStrip();
 
@@ -1484,10 +1481,6 @@ const launchScreen = document.getElementById("launch-screen");
 if (launchStartButton && launchScreen) {
     launchStartButton.addEventListener("click", () => {
         launchScreen.style.display = "none";
-
-        if (isMobilePanelMode()) {
-            openControlsPanel();
-        }
     });
 }
 
