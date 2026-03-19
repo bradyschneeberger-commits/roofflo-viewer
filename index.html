@@ -52,6 +52,16 @@
           <svg viewBox="0 0 24 24" role="presentation" focusable="false"><path d="M6 5h12M6 12h8M6 19h12"/></svg>
         </span>
       </button>
+      <div class="status-indicator-wrap">
+        <button id="btn-toolbar-status" type="button" class="workspace-action-btn workspace-status-btn" aria-label="Ventilation status" title="Ventilation Status" aria-expanded="false" aria-controls="vent-status-toast">
+          <span class="workspace-action-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" role="presentation" focusable="false"><circle cx="12" cy="12" r="7"/><path d="M12 8v5"/><path d="M12 16h.01"/></svg>
+          </span>
+        </button>
+        <div id="vent-status-toast" class="status-popover" aria-live="polite" aria-hidden="true" role="status">
+          <p id="vent-status-message">Hot, stale air is trapped in the attic</p>
+        </div>
+      </div>
       <button id="btn-toolbar-restore-current" type="button" class="toolbar-hidden-accessory" disabled aria-hidden="true" tabindex="-1">Restore</button>
     </header>
 
@@ -273,11 +283,6 @@
       </div>
     </section>
   </main>
-
-  <div id="vent-status-toast" class="vent-status-toast" aria-live="polite" aria-hidden="true">
-    <p id="vent-status-message">Hot, stale air is trapped in the attic</p>
-    <button id="vent-status-close" type="button" aria-label="Dismiss ventilation status message">×</button>
-  </div>
 
   <script type="module" src="main.js"></script>
 </body>

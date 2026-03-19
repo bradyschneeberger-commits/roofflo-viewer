@@ -76,7 +76,7 @@ const resultExhaustDiff = document.getElementById("result-exhaust-diff");
 const resultStatus = document.getElementById("result-status");
 const ventStatusToast = document.getElementById("vent-status-toast");
 const ventStatusMessage = document.getElementById("vent-status-message");
-const ventStatusCloseButton = document.getElementById("vent-status-close");
+const statusIndicatorButton = document.getElementById("btn-toolbar-status");
 const toolbarSaveCurrentButton = document.getElementById("btn-toolbar-save-current");
 const toolbarRestoreCurrentButton = document.getElementById("btn-toolbar-restore-current");
 const toolbarIntakeOnlyButton = document.getElementById("btn-toolbar-intake-only");
@@ -86,7 +86,6 @@ const toolbarGridToggleButton = document.getElementById("btn-toolbar-grid-toggle
 const toolbarStartButton = document.getElementById("btn-toolbar-start");
 const toolbarResetButton = document.getElementById("btn-toolbar-reset");
 const toolbarResultsButton = document.getElementById("btn-toolbar-results");
-const topToolbar = document.getElementById("top-toolbar");
 const compactSetupButton = document.getElementById("btn-compact-setup");
 const compactPlacementButton = document.getElementById("btn-compact-placement");
 const compactPresetsButton = document.getElementById("btn-compact-presets");
@@ -121,11 +120,11 @@ let workspaceUiState = {
     isGridVisible: true,
     isSnapshotSaveAnimating: false
 };
-let userDismissedVentMessage = false;
 let lastVentStatusKey = null;
 let savedVentLayout = null;
 let currentLayoutSource = "unknown";
 let transientStatusTimer = null;
+let statusPopoverTimer = null;
 let snapshotSlides = [];
 let activeSnapshotId = null;
 let snapshotSlideIdSeed = 1;
@@ -950,39 +949,121 @@ function getVentilationMessageData() {
     };
 }
 
+function getStatusToneFromMessageData(messageData) {
+    const ventilationState = getVentilationState();
+
+    if (ventilationState === "none") {
+        return "red";
+    }
+
+    if (ventilationState === "exhaust") {
+        return "orange";
+    }
+
+    if (ventilationState === "intake") {
+        return "blue";
+    }
+
+    if (messageData?.state === "success") {
+        return "green";
+    }
+
+    if (messageData?.state === "warning") {
+        return "orange";
+    }
+
+    return "blue";
+}
+
+function showStatusPopover(durationMs = 0) {
+    if (!ventStatusToast) {
+        return;
+    }
+
+    if (statusPopoverTimer) {
+        window.clearTimeout(statusPopoverTimer);
+        statusPopoverTimer = null;
+    }
+
+    ventStatusToast.classList.add("is-visible");
+    ventStatusToast.setAttribute("aria-hidden", "false");
+    statusIndicatorButton?.setAttribute("aria-expanded", "true");
+
+    if (durationMs > 0) {
+        statusPopoverTimer = window.setTimeout(() => {
+            statusPopoverTimer = null;
+            hideStatusPopover();
+        }, durationMs);
+    }
+}
+
+function hideStatusPopover() {
+    if (!ventStatusToast) {
+        return;
+    }
+
+    if (statusPopoverTimer) {
+        window.clearTimeout(statusPopoverTimer);
+        statusPopoverTimer = null;
+    }
+
+    ventStatusToast.classList.remove("is-visible");
+    ventStatusToast.setAttribute("aria-hidden", "true");
+    statusIndicatorButton?.setAttribute("aria-expanded", "false");
+}
+
+function isMobileStatusInteraction() {
+    return window.matchMedia("(hover: none), (pointer: coarse)").matches;
+}
+
+function onStatusIndicatorPointerEnter() {
+    if (isMobileStatusInteraction()) {
+        return;
+    }
+
+    showStatusPopover();
+}
+
+function onStatusIndicatorPointerLeave() {
+    if (isMobileStatusInteraction()) {
+        return;
+    }
+
+    hideStatusPopover();
+}
+
+function onStatusIndicatorClicked(event) {
+    event.preventDefault();
+    showStatusPopover(isMobileStatusInteraction() ? 2600 : 2200);
+}
+
 function updateVentStatusMessage({ forceReveal = false } = {}) {
     const messageData = getVentilationMessageData();
     const stateChanged = messageData.key !== lastVentStatusKey;
-
-    if (stateChanged || forceReveal) {
-        userDismissedVentMessage = false;
-    }
+    const statusTone = getStatusToneFromMessageData(messageData);
 
     if (ventStatusMessage) {
         ventStatusMessage.textContent = messageData.message;
+    }
+
+    if (statusIndicatorButton) {
+        statusIndicatorButton.classList.remove("status-red", "status-orange", "status-blue", "status-green");
+        statusIndicatorButton.classList.add(`status-${statusTone}`);
+        statusIndicatorButton.setAttribute("aria-label", `Ventilation status: ${messageData.message}`);
+        statusIndicatorButton.setAttribute("title", messageData.message);
     }
 
     if (ventStatusToast) {
         ventStatusToast.classList.remove("is-danger", "is-warning", "is-info", "is-success");
         ventStatusToast.classList.add(`is-${messageData.state}`);
 
-        const shouldShow = !userDismissedVentMessage;
-        ventStatusToast.classList.toggle("is-visible", shouldShow);
-        ventStatusToast.setAttribute("aria-hidden", shouldShow ? "false" : "true");
+        if (!ventStatusToast.classList.contains("is-visible")) {
+            ventStatusToast.setAttribute("aria-hidden", "true");
+        }
     }
 
     lastVentStatusKey = messageData.key;
-}
 
-function dismissVentStatusMessage() {
-    userDismissedVentMessage = true;
-
-    if (!ventStatusToast) {
-        return;
-    }
-
-    ventStatusToast.classList.remove("is-visible");
-    ventStatusToast.setAttribute("aria-hidden", "true");
 }
 
 function setRestoreAvailabilityUI() {
@@ -997,23 +1078,6 @@ function setRestoreAvailabilityUI() {
     }
 }
 
-function syncMessagePanelAnchor() {
-    if (!ventStatusToast || !topToolbar) {
-        return;
-    }
-
-    const isMobile = window.matchMedia("(max-width: 900px)").matches;
-    if (isMobile) {
-        ventStatusToast.style.left = "";
-        ventStatusToast.style.top = "";
-        return;
-    }
-
-    const toolbarRect = topToolbar.getBoundingClientRect();
-    ventStatusToast.style.left = `${Math.round(toolbarRect.right + 10)}px`;
-    ventStatusToast.style.top = `${Math.round(toolbarRect.top)}px`;
-}
-
 function showTemporaryStatusMessage(message, state = "info", durationMs = 1400) {
     if (!ventStatusToast || !ventStatusMessage) {
         return;
@@ -1024,12 +1088,10 @@ function showTemporaryStatusMessage(message, state = "info", durationMs = 1400) 
         transientStatusTimer = null;
     }
 
-    userDismissedVentMessage = false;
     ventStatusMessage.textContent = message;
     ventStatusToast.classList.remove("is-danger", "is-warning", "is-info", "is-success");
     ventStatusToast.classList.add(`is-${state}`);
-    ventStatusToast.classList.add("is-visible");
-    ventStatusToast.setAttribute("aria-hidden", "false");
+    showStatusPopover(durationMs);
 
     transientStatusTimer = window.setTimeout(() => {
         transientStatusTimer = null;
@@ -1508,7 +1570,11 @@ staticVentButton?.addEventListener("click", () => setPlacementMode(PlacementMode
 ridgeVentButton?.addEventListener("click", () => setPlacementMode(PlacementMode.RIDGE));
 controlsToggleButton?.addEventListener("click", toggleToolPanel);
 resultsToggleButton?.addEventListener("click", toggleResultsPanel);
-ventStatusCloseButton?.addEventListener("click", dismissVentStatusMessage);
+statusIndicatorButton?.addEventListener("mouseenter", onStatusIndicatorPointerEnter);
+statusIndicatorButton?.addEventListener("mouseleave", onStatusIndicatorPointerLeave);
+statusIndicatorButton?.addEventListener("focus", () => showStatusPopover(2200));
+statusIndicatorButton?.addEventListener("blur", hideStatusPopover);
+statusIndicatorButton?.addEventListener("click", onStatusIndicatorClicked);
 toolbarSaveCurrentButton?.addEventListener("click", onSaveCurrentLayoutClicked);
 toolbarRestoreCurrentButton?.addEventListener("click", onRestoreCurrentLayoutClicked);
 toolbarIntakeOnlyButton?.addEventListener("click", () => applyToolbarPreset(generateIntakeOnlyPreset, "preset"));
@@ -1554,7 +1620,6 @@ renderer.domElement.addEventListener("pointermove", onViewerPointerMove);
 renderer.domElement.addEventListener("pointerleave", onViewerPointerLeave);
 
 window.addEventListener("keydown", onSnapshotStripKeydown);
-window.addEventListener("resize", syncMessagePanelAnchor);
 
 updateSimulationButtonUI();
 syncGridVisibilityUI();
@@ -1563,7 +1628,6 @@ setWorkspaceTab(workspaceUiState.activeWorkspaceTab);
 syncWorkspaceUiState();
 setRestoreAvailabilityUI();
 renderSnapshotStrip();
-syncMessagePanelAnchor();
 
 let lastAnimationTime = performance.now();
 
