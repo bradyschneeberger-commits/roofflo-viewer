@@ -1291,6 +1291,124 @@ select:focus {
   font-size: 17px;
 }
 
+/* ─── Setup import banner ─────────────────────────────────────────────── */
+.setup-import-banner {
+  padding: 10px 13px;
+  border-radius: 10px;
+  border: 1px solid rgba(45, 212, 191, 0.28);
+  background: rgba(45, 212, 191, 0.06);
+  margin-bottom: 14px;
+  gap: 4px;
+}
+
+.setup-import-banner:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+}
+
+.setup-import-banner-line {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #94a3b8;
+  line-height: 1.35;
+}
+
+.setup-import-banner-line strong {
+  color: #5eead4;
+  font-weight: 760;
+}
+
+.setup-import-banner-sub {
+  margin: 0;
+  font-size: 11px;
+  color: rgba(148, 163, 184, 0.56);
+  line-height: 1.4;
+}
+
+.setup-import-banner-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.setup-use-geometry-btn {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 11px;
+  font-weight: 700;
+  color: rgba(148, 163, 184, 0.62);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  transition: color 0.12s ease;
+}
+
+.setup-use-geometry-btn:hover {
+  color: #94a3b8;
+}
+
+/* ─── Attic area source badge (results panel) ─────────────────────────── */
+.result-area-source-badge {
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 760;
+  background: rgba(45, 212, 191, 0.14);
+  border: 1px solid rgba(45, 212, 191, 0.36);
+  color: #5eead4;
+  vertical-align: middle;
+  white-space: nowrap;
+  margin-left: 4px;
+}
+
+.result-area-source-badge:not([hidden]) {
+  display: inline-block;
+}
+
+/* ─── Calculator: Open in Viewer CTA ──────────────────────────────────── */
+.calc-card-footer {
+  border-top: 1px solid rgba(148, 163, 184, 0.14);
+  padding-top: 16px;
+}
+
+.calc-open-viewer-btn {
+  width: 100%;
+  min-height: 44px;
+  padding: 12px 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 11px;
+  border: 1px solid rgba(96, 165, 250, 0.42);
+  background: rgba(37, 99, 235, 0.14);
+  color: #93c5fd;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 0.14s ease, background-color 0.14s ease;
+}
+
+.calc-open-viewer-btn:hover {
+  border-color: rgba(96, 165, 250, 0.7);
+  background: rgba(37, 99, 235, 0.22);
+}
+
+.calc-open-viewer-btn svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 /* ─── Responsive overrides for new elements ──────────────────────────── */
 @media (max-width: 560px) {
   .launch-options {

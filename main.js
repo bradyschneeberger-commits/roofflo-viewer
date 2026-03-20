@@ -69,6 +69,7 @@ const resultRule = document.getElementById("result-rule");
 const resultRequiredTotal = document.getElementById("result-required-total");
 const resultRequiredIntake = document.getElementById("result-required-intake");
 const resultRequiredExhaust = document.getElementById("result-required-exhaust");
+const resultAreaSourceBadge = document.getElementById("result-area-source-badge");
 const resultInstalledIntake = document.getElementById("result-installed-intake");
 const resultInstalledExhaust = document.getElementById("result-installed-exhaust");
 const resultIntakeDiff = document.getElementById("result-intake-diff");
@@ -129,6 +130,8 @@ let snapshotSlides = [];
 let activeSnapshotId = null;
 let snapshotSlideIdSeed = 1;
 let draggingSnapshotId = null;
+let importedAtticArea = null;
+let calculationSource = "geometry"; // "calculator" | "geometry"
 
 // Store selected ventilation rule for future calculations.
 let selectedVentilationRule = ventRuleSelect?.value || "1/150";
@@ -852,10 +855,8 @@ function formatSignedIn2(value) {
 }
 
 function getCurrentVentilationStatus() {
-    const buildingWidth = Math.max(1, toNumber(houseWidthInput?.value, 30));
-    const buildingLength = Math.max(1, toNumber(houseLengthInput?.value, 50));
     const ventilationRule = selectedVentilationRule || "1/150";
-    const atticAreaSqFt = calculateAtticArea(buildingWidth, buildingLength);
+    const atticAreaSqFt = getEffectiveAtticArea();
     const requiredVentIn2 = calculateRequiredVentilation(atticAreaSqFt, ventilationRule);
     const requiredIntakeIn2 = calculateRequiredIntake(requiredVentIn2);
     const requiredExhaustIn2 = calculateRequiredExhaust(requiredVentIn2);
@@ -1100,11 +1101,8 @@ function showTemporaryStatusMessage(message, state = "info", durationMs = 1400) 
 }
 
 function refreshResultsPanel() {
-    const buildingWidth = Math.max(1, toNumber(houseWidthInput?.value, 30));
-    const buildingLength = Math.max(1, toNumber(houseLengthInput?.value, 50));
     const ventilationRule = selectedVentilationRule || "1/150";
-
-    const atticAreaSqFt = calculateAtticArea(buildingWidth, buildingLength);
+    const atticAreaSqFt = getEffectiveAtticArea();
     const requiredVentIn2 = calculateRequiredVentilation(atticAreaSqFt, ventilationRule);
     const requiredIntakeIn2 = calculateRequiredIntake(requiredVentIn2);
     const requiredExhaustIn2 = calculateRequiredExhaust(requiredVentIn2);
@@ -1129,6 +1127,9 @@ function refreshResultsPanel() {
 
     if (resultAtticArea) {
         resultAtticArea.textContent = formatSqFt(atticAreaSqFt);
+    }
+    if (resultAreaSourceBadge) {
+        resultAreaSourceBadge.hidden = calculationSource !== "calculator";
     }
     if (resultRule) {
         resultRule.textContent = ventilationRule;
@@ -1680,6 +1681,10 @@ const calcResultExhaust = document.getElementById("calc-result-exhaust");
 const calcRuleHelpText = document.getElementById("calc-rule-help-text");
 const calcCopyResultsButton = document.getElementById("btn-calc-copy-results");
 const calcShareResultsButton = document.getElementById("btn-calc-share-results");
+const setupImportBanner = document.getElementById("setup-import-banner");
+const setupImportAreaSpan = document.getElementById("setup-import-area");
+const btnCalcOpenViewer = document.getElementById("btn-calc-open-viewer");
+const btnSetupUseGeometry = document.getElementById("btn-setup-use-geometry");
 
 function updateVentRuleHelpText() {
     if (!calcRuleHelpText || !calcVentRuleSelect) {
@@ -1792,6 +1797,55 @@ async function onShareQuickResults() {
     }
 }
 
+function getEffectiveAtticArea() {
+    if (calculationSource === "calculator" && importedAtticArea !== null && importedAtticArea > 0) {
+        return importedAtticArea;
+    }
+
+    const buildingWidth = Math.max(1, toNumber(houseWidthInput?.value, 30));
+    const buildingLength = Math.max(1, toNumber(houseLengthInput?.value, 50));
+    return calculateAtticArea(buildingWidth, buildingLength);
+}
+
+function syncSetupImportBanner() {
+    if (!setupImportBanner) {
+        return;
+    }
+
+    if (calculationSource === "calculator" && importedAtticArea !== null && importedAtticArea > 0) {
+        if (setupImportAreaSpan) {
+            setupImportAreaSpan.textContent = `${importedAtticArea.toLocaleString("en-US", { maximumFractionDigits: 0 })} sq ft`;
+        }
+
+        setupImportBanner.hidden = false;
+    } else {
+        setupImportBanner.hidden = true;
+    }
+}
+
+function openViewerFromCalculator() {
+    const area = parseFloat(calcAtticAreaInput?.value);
+
+    if (Number.isFinite(area) && area > 0) {
+        importedAtticArea = area;
+        calculationSource = "calculator";
+    } else {
+        importedAtticArea = null;
+        calculationSource = "geometry";
+    }
+
+    selectedVentilationRule = calcVentRuleSelect?.value || "1/150";
+    if (ventRuleSelect) {
+        ventRuleSelect.value = selectedVentilationRule;
+    }
+
+    setAppMode("viewer");
+    openDrawerToTab("setup");
+    syncSetupImportBanner();
+    refreshResultsPanel();
+    updateVentStatusMessage({ forceReveal: true });
+}
+
 function setAppMode(mode) {
     if (launchScreen) {
         launchScreen.classList.toggle("is-hidden", mode !== "launch");
@@ -1831,7 +1885,13 @@ function runQuickCalculation() {
     if (calcResultExhaust) calcResultExhaust.textContent = formatVentilationValue(exhaust);
 }
 
-btnOpenViewer?.addEventListener("click", () => setAppMode("viewer"));
+btnOpenViewer?.addEventListener("click", () => {
+    importedAtticArea = null;
+    calculationSource = "geometry";
+    syncSetupImportBanner();
+    refreshResultsPanel();
+    setAppMode("viewer");
+});
 btnOpenCalculator?.addEventListener("click", () => setAppMode("calculator"));
 btnCalcBack?.addEventListener("click", () => setAppMode("launch"));
 
@@ -1863,6 +1923,15 @@ calcAtticAreaInput?.addEventListener("keydown", (event) => {
 
 calcCopyResultsButton?.addEventListener("click", onCopyQuickResults);
 calcShareResultsButton?.addEventListener("click", onShareQuickResults);
+btnCalcOpenViewer?.addEventListener("click", openViewerFromCalculator);
+
+btnSetupUseGeometry?.addEventListener("click", () => {
+    calculationSource = "geometry";
+    importedAtticArea = null;
+    syncSetupImportBanner();
+    refreshResultsPanel();
+    updateVentStatusMessage();
+});
 
 if (calcShareResultsButton && navigator.share) {
     calcShareResultsButton.hidden = false;

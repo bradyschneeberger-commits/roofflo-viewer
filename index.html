@@ -91,7 +91,7 @@
 
         <div class="results-grid">
           <div class="result-row">
-            <span class="result-label">Attic Area</span>
+            <span class="result-label">Attic Area <span id="result-area-source-badge" class="result-area-source-badge" hidden>via calculator</span></span>
             <span id="result-attic-area" class="result-value">0.0 sq ft</span>
           </div>
 
@@ -223,6 +223,13 @@
 
       <div id="control-panel-content" class="workspace-tab-panels">
         <section id="tab-panel-setup" class="workspace-tab-panel is-active" role="tabpanel" aria-labelledby="tab-setup" data-panel="setup">
+          <div id="setup-import-banner" class="setup-import-banner" hidden>
+            <div class="setup-import-banner-row">
+              <p class="setup-import-banner-line">Attic area from calculator: <strong id="setup-import-area">—</strong></p>
+              <button id="btn-setup-use-geometry" type="button" class="setup-use-geometry-btn">Switch to geometry</button>
+            </div>
+            <p class="setup-import-banner-sub">Add building dimensions for visualization — calculations use the imported area.</p>
+          </div>
           <div class="field-group">
             <label for="house-width">House Width</label>
             <div class="input-row">
@@ -363,6 +370,12 @@
             <span id="calc-result-exhaust" class="calc-result-value">—</span>
           </div>
         </div>
+      </div>
+      <div class="calc-card-footer">
+        <button id="btn-calc-open-viewer" type="button" class="calc-open-viewer-btn">
+          <span>Open in Viewer</span>
+          <svg viewBox="0 0 24 24" role="presentation" focusable="false"><path d="M5 12h14"/><path d="M12 5l7 7-7 7"/></svg>
+        </button>
       </div>
     </div>
   </div>
