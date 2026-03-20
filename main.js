@@ -87,7 +87,7 @@ const toolbarGridToggleButton = document.getElementById("btn-toolbar-grid-toggle
 const toolbarStartButton = document.getElementById("btn-toolbar-start");
 const toolbarResetButton = document.getElementById("btn-toolbar-reset");
 const toolbarResultsButton = document.getElementById("btn-toolbar-results");
-const toolbarPresentationButton = document.getElementById("btn-toolbar-presentation");
+const snapshotPresentButton = document.getElementById("btn-snapshot-present");
 const workspace = document.getElementById("workspace");
 const compactSetupButton = document.getElementById("btn-compact-setup");
 const compactPlacementButton = document.getElementById("btn-compact-placement");
@@ -148,6 +148,7 @@ let presentationStepIndex = 0;
 let presentationBaseSnapshot = null;
 let isPresentationAutoCamera = false;
 let hasPresentationCameraOverride = false;
+let presentationCameraTransition = null;
 let calculatorViewerEntryTimer = null;
 let calculatorViewerHintTimer = null;
 
@@ -178,7 +179,33 @@ const presentationSteps = [
     }
 ];
 
+const presentationCameraPresets = [
+    {
+        position: { x: 10, y: 8.5, z: 15.5 },
+        target: { x: 0, y: 4.1, z: 0 },
+        durationMs: 300
+    },
+    {
+        position: { x: -12.5, y: 9.2, z: 18.5 },
+        target: { x: 0.7, y: 4.3, z: -0.2 },
+        durationMs: 300
+    },
+    {
+        position: { x: 18, y: 11.2, z: 25.5 },
+        target: { x: 0, y: 4.2, z: 0 },
+        durationMs: 320
+    },
+    {
+        position: { x: 16.2, y: 14.6, z: 20.5 },
+        target: { x: 0, y: 5.4, z: 0 },
+        durationMs: 380
+    }
+];
+
 const PRESENTATION_AUTO_ROTATE_SPEED = 0.55;
+const PRESENTATION_CAMERA_TRANSITION_MS = 320;
+const PRESENTATION_RESUME_TARGET_ONLY_MS = 220;
+const PRESENTATION_RESUME_NEAR_DISTANCE_SQ = 2.25;
 
 // Store selected ventilation rule for future calculations.
 let selectedVentilationRule = ventRuleSelect?.value || "1/150";
@@ -241,6 +268,96 @@ function syncImportedGeometryGateState() {
     updatePlacementButtonUI();
 }
 
+function getPresentationCameraPreset(index) {
+    const safeIndex = Math.max(0, Math.min(presentationCameraPresets.length - 1, index));
+    return presentationCameraPresets[safeIndex];
+}
+
+function setCameraPoseFromPreset(preset) {
+    if (!preset) {
+        return;
+    }
+
+    camera.position.set(preset.position.x, preset.position.y, preset.position.z);
+    controls.target.set(preset.target.x, preset.target.y, preset.target.z);
+    controls.update();
+}
+
+function startPresentationCameraTransition(stepIndex, { immediate = false, durationMs = null, targetOnly = false } = {}) {
+    const preset = getPresentationCameraPreset(stepIndex);
+    if (!preset) {
+        return;
+    }
+
+    if (immediate) {
+        presentationCameraTransition = null;
+        setCameraPoseFromPreset(preset);
+        return;
+    }
+
+    controls.autoRotate = false;
+
+    presentationCameraTransition = {
+        startedAt: performance.now(),
+        durationMs: durationMs ?? preset.durationMs ?? PRESENTATION_CAMERA_TRANSITION_MS,
+        targetOnly,
+        fromPosition: {
+            x: camera.position.x,
+            y: camera.position.y,
+            z: camera.position.z
+        },
+        toPosition: {
+            x: preset.position.x,
+            y: preset.position.y,
+            z: preset.position.z
+        },
+        fromTarget: {
+            x: controls.target.x,
+            y: controls.target.y,
+            z: controls.target.z
+        },
+        toTarget: {
+            x: preset.target.x,
+            y: preset.target.y,
+            z: preset.target.z
+        }
+    };
+}
+
+function updatePresentationCameraTransition(now) {
+    if (!presentationCameraTransition) {
+        return;
+    }
+
+    const elapsed = Math.max(0, now - presentationCameraTransition.startedAt);
+    const t = Math.min(1, elapsed / presentationCameraTransition.durationMs);
+    const eased = 1 - Math.pow(1 - t, 3);
+
+    const fromPos = presentationCameraTransition.fromPosition;
+    const toPos = presentationCameraTransition.toPosition;
+    const fromTarget = presentationCameraTransition.fromTarget;
+    const toTarget = presentationCameraTransition.toTarget;
+
+    if (!presentationCameraTransition.targetOnly) {
+        camera.position.set(
+            fromPos.x + ((toPos.x - fromPos.x) * eased),
+            fromPos.y + ((toPos.y - fromPos.y) * eased),
+            fromPos.z + ((toPos.z - fromPos.z) * eased)
+        );
+    }
+
+    controls.target.set(
+        fromTarget.x + ((toTarget.x - fromTarget.x) * eased),
+        fromTarget.y + ((toTarget.y - fromTarget.y) * eased),
+        fromTarget.z + ((toTarget.z - fromTarget.z) * eased)
+    );
+
+    if (t >= 1) {
+        presentationCameraTransition = null;
+        controls.autoRotate = isPresentationMode && isPresentationAutoCamera;
+    }
+}
+
 function restartPresentationSimulation() {
     resetAirflowSimulation();
     simulationState = SimulationState.IDLE;
@@ -284,6 +401,7 @@ function interruptPresentationAutoCamera() {
         return;
     }
 
+    presentationCameraTransition = null;
     setPresentationAutoCameraState(false, { userOverride: true });
 }
 
@@ -324,10 +442,10 @@ function syncPresentationUiState() {
         presentationOverlay.hidden = !isPresentationMode;
     }
 
-    if (toolbarPresentationButton) {
-        toolbarPresentationButton.classList.toggle("is-active", isPresentationMode);
-        toolbarPresentationButton.setAttribute("aria-label", isPresentationMode ? "Presentation mode active" : "Start presentation mode");
-        toolbarPresentationButton.setAttribute("title", isPresentationMode ? "Presentation Mode Active" : "Start Presentation");
+    if (snapshotPresentButton) {
+        snapshotPresentButton.setAttribute("aria-label", isPresentationMode ? "Presentation mode active" : "Start presentation mode");
+        snapshotPresentButton.setAttribute("title", isPresentationMode ? "Presentation Mode Active" : "Start Presentation");
+        snapshotPresentButton.textContent = isPresentationMode ? "Presenting..." : "Present";
     }
 
     if (isPresentationMode) {
@@ -373,6 +491,7 @@ function loadPresentationStep(index) {
     hideVentPreview();
     clearVentPreview();
 
+    startPresentationCameraTransition(presentationStepIndex);
     restartPresentationSimulation();
     refreshResultsPanel();
     updateVentStatusMessage({ forceReveal: true });
@@ -396,6 +515,7 @@ function enterPresentationMode() {
     presentationStepIndex = 0;
     closeCompactQuickModes();
     hasPresentationCameraOverride = false;
+    presentationCameraTransition = null;
     syncPresentationUiState();
     loadPresentationStep(0);
 }
@@ -410,6 +530,7 @@ function exitPresentationMode() {
     presentationStepIndex = 0;
     presentationBaseSnapshot = null;
     hasPresentationCameraOverride = false;
+    presentationCameraTransition = null;
     setPresentationAutoCameraState(false);
 
     if (snapshotToRestore) {
@@ -445,6 +566,24 @@ function onPresentationBackClicked() {
 function onPresentationResumeClicked() {
     if (!isPresentationMode) {
         return;
+    }
+
+    hasPresentationCameraOverride = false;
+    const preset = getPresentationCameraPreset(presentationStepIndex);
+    if (preset) {
+        const dx = camera.position.x - preset.position.x;
+        const dy = camera.position.y - preset.position.y;
+        const dz = camera.position.z - preset.position.z;
+        const distanceSq = (dx * dx) + (dy * dy) + (dz * dz);
+
+        if (distanceSq <= PRESENTATION_RESUME_NEAR_DISTANCE_SQ) {
+            startPresentationCameraTransition(presentationStepIndex, {
+                targetOnly: true,
+                durationMs: PRESENTATION_RESUME_TARGET_ONLY_MS
+            });
+        } else {
+            startPresentationCameraTransition(presentationStepIndex);
+        }
     }
 
     setPresentationAutoCameraState(true, { userOverride: false });
@@ -670,7 +809,7 @@ function onSnapshotCardLoad(snapshotId) {
     savedVentLayout = slide.snapshot;
     setRestoreAvailabilityUI();
     setActiveSnapshotCard(slide.id);
-    showTemporaryStatusMessage("Snapshot loaded", "info", 1200);
+    showTemporaryStatusMessage("Slide loaded", "info", 1200);
 }
 
 function renderSnapshotStrip() {
@@ -1994,7 +2133,7 @@ toolbarGridToggleButton?.addEventListener("click", onGridToggleClicked);
 toolbarStartButton?.addEventListener("click", onStartSimulationClicked);
 toolbarResetButton?.addEventListener("click", onResetClicked);
 toolbarResultsButton?.addEventListener("click", toggleResultsPanel);
-toolbarPresentationButton?.addEventListener("click", () => {
+snapshotPresentButton?.addEventListener("click", () => {
     if (isPresentationMode) {
         exitPresentationMode();
         return;
@@ -2021,7 +2160,7 @@ snapshotAddButton?.addEventListener("click", () => {
     const added = addSnapshotSlideFromCurrent();
     if (added) {
         openDrawerToTab("snapshots");
-        showTemporaryStatusMessage("Snapshot added", "success", 1200);
+        showTemporaryStatusMessage("Slide added", "success", 1200);
     }
 });
 
@@ -2065,6 +2204,7 @@ function animate(now = performance.now()) {
     lastAnimationTime = now;
 
     updateAirflow(deltaTime);
+    updatePresentationCameraTransition(now);
     controls.update();
     renderer.render(scene, camera);
 }

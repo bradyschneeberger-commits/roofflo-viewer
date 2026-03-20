@@ -67,12 +67,6 @@
           <svg viewBox="0 0 24 24" role="presentation" focusable="false"><path d="M6 5h12M6 12h8M6 19h12"/></svg>
         </span>
       </button>
-      <button id="btn-toolbar-presentation" type="button" class="workspace-action-btn workspace-presentation-btn" aria-label="Start presentation mode" title="Start Presentation">
-        <span class="workspace-action-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" role="presentation" focusable="false"><path d="M8 6l10 6-10 6z"/><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
-        </span>
-        <span class="workspace-presentation-btn-label">Present</span>
-      </button>
       <div class="status-indicator-wrap">
         <button id="btn-toolbar-status" type="button" class="workspace-action-btn workspace-status-btn" aria-label="Ventilation status" title="Ventilation Status" aria-expanded="false" aria-controls="vent-status-toast">
           <span class="workspace-action-icon" aria-hidden="true">
@@ -167,7 +161,7 @@
               <svg viewBox="0 0 24 24" role="presentation" focusable="false"><path d="M5 6h14M5 12h10M5 18h7"/><circle cx="17" cy="12" r="2"/></svg>
             </span>
           </button>
-          <button id="btn-compact-snapshots" type="button" class="compact-icon-btn" aria-label="Open snapshots" title="Snapshots">
+          <button id="btn-compact-snapshots" type="button" class="compact-icon-btn" aria-label="Open presentation" title="Presentation">
             <span aria-hidden="true">
               <svg viewBox="0 0 24 24" role="presentation" focusable="false"><rect x="4" y="6" width="16" height="12" rx="2"/><circle cx="12" cy="12" r="3"/></svg>
             </span>
@@ -224,7 +218,7 @@
         <button id="tab-setup" class="workspace-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="tab-panel-setup" data-tab="setup">Setup</button>
         <button id="tab-placement" class="workspace-tab" type="button" role="tab" aria-selected="false" aria-controls="tab-panel-placement" data-tab="placement">Vent Placement</button>
         <button id="tab-presets" class="workspace-tab" type="button" role="tab" aria-selected="false" aria-controls="tab-panel-presets" data-tab="presets">Presets</button>
-        <button id="tab-snapshots" class="workspace-tab" type="button" role="tab" aria-selected="false" aria-controls="tab-panel-snapshots" data-tab="snapshots">Snapshots</button>
+        <button id="tab-snapshots" class="workspace-tab" type="button" role="tab" aria-selected="false" aria-controls="tab-panel-snapshots" data-tab="snapshots">Presentation</button>
       </div>
 
       <div id="control-panel-content" class="workspace-tab-panels">
@@ -306,8 +300,11 @@
 
         <section id="tab-panel-snapshots" class="workspace-tab-panel" role="tabpanel" aria-labelledby="tab-snapshots" data-panel="snapshots" hidden>
           <div class="snapshot-panel-header">
-            <h3>Snapshots</h3>
-            <button id="btn-snapshot-add" type="button" class="snapshot-add-btn">Add Snapshot</button>
+            <h3>Slides</h3>
+          </div>
+          <div class="snapshot-panel-toolbar">
+            <button id="btn-snapshot-add" type="button" class="snapshot-add-btn">Add Slide</button>
+            <button id="btn-snapshot-present" type="button" class="snapshot-present-btn">Present</button>
           </div>
           <div id="snapshot-strip" class="snapshot-strip" role="list"></div>
         </section>
