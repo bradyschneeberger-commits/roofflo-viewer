@@ -43,35 +43,23 @@
   <main id="workspace" aria-label="RoofFlo workspace">
     <header id="top-toolbar" aria-label="Workspace actions">
       <button id="btn-toolbar-start" type="button" class="workspace-action-btn is-primary" aria-label="Start simulation" title="Start Simulation">
-        <span class="workspace-action-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" role="presentation" focusable="false"><path d="M8 6l10 6-10 6z"/></svg>
-        </span>
+        <span class="workspace-action-icon" aria-hidden="true"><i data-lucide="play"></i></span>
       </button>
-      <button id="btn-toolbar-reset" type="button" class="workspace-action-btn is-danger" aria-label="Reset simulation and vents" title="Reset">
-        <span class="workspace-action-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" role="presentation" focusable="false"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>
-        </span>
+      <button id="btn-toolbar-reset" type="button" class="workspace-action-btn is-danger" aria-label="Reset model" title="Reset Model">
+        <span class="workspace-action-icon" aria-hidden="true"><i data-lucide="rotate-ccw"></i></span>
       </button>
-      <button id="btn-toolbar-grid-toggle" type="button" class="workspace-action-btn" aria-label="Toggle grid visibility" title="Toggle Grid">
-        <span class="workspace-action-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" role="presentation" focusable="false"><path d="M4 9h16M4 15h16M9 4v16M15 4v16"/></svg>
-        </span>
+      <button id="btn-toolbar-grid-toggle" type="button" class="workspace-action-btn" aria-label="Toggle grid" title="Toggle Grid">
+        <span class="workspace-action-icon" aria-hidden="true"><i data-lucide="grid-3x3"></i></span>
       </button>
-      <button id="btn-toolbar-save-current" type="button" class="workspace-action-btn" aria-label="Save snapshot" title="Save Snapshot">
-        <span class="workspace-action-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" role="presentation" focusable="false"><rect x="5" y="6" width="14" height="12" rx="2"/><path d="M9 6l1.2-2h3.6L15 6"/></svg>
-        </span>
+      <button id="btn-toolbar-save-current" type="button" class="workspace-action-btn" aria-label="Capture slide" title="Capture Slide">
+        <span class="workspace-action-icon" aria-hidden="true"><i data-lucide="camera"></i></span>
       </button>
-      <button id="btn-toolbar-results" type="button" class="workspace-action-btn" aria-label="Toggle results panel" title="Results">
-        <span class="workspace-action-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24" role="presentation" focusable="false"><path d="M6 5h12M6 12h8M6 19h12"/></svg>
-        </span>
+      <button id="btn-toolbar-results" type="button" class="workspace-action-btn" aria-label="View results" title="View Results">
+        <span class="workspace-action-icon" aria-hidden="true"><i data-lucide="bar-chart-3"></i></span>
       </button>
       <div class="status-indicator-wrap">
         <button id="btn-toolbar-status" type="button" class="workspace-action-btn workspace-status-btn" aria-label="Ventilation status" title="Ventilation Status" aria-expanded="false" aria-controls="vent-status-toast">
-          <span class="workspace-action-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" role="presentation" focusable="false"><circle cx="12" cy="12" r="7"/><path d="M12 8v5"/><path d="M12 16h.01"/></svg>
-          </span>
+          <span class="workspace-action-icon" aria-hidden="true"><i data-lucide="circle-alert"></i></span>
         </button>
         <div id="vent-status-toast" class="status-popover" aria-live="polite" aria-hidden="true" role="status">
           <p id="vent-status-message">Hot, stale air is trapped in the attic</p>
@@ -146,66 +134,45 @@
     <section id="control-panel" aria-label="Workspace tools">
       <div id="drawer-compact-rail" class="drawer-compact-rail" aria-label="Quick workspace controls">
         <div class="drawer-compact-main" role="toolbar" aria-label="Tool dock">
-          <button id="btn-compact-setup" type="button" class="compact-icon-btn" aria-label="Open setup" title="Setup">
-            <span aria-hidden="true">
-              <svg viewBox="0 0 24 24" role="presentation" focusable="false"><path d="M4 8h16M4 16h16M8 4v16M16 4v16"/></svg>
-            </span>
+          <button id="btn-compact-setup" type="button" class="compact-icon-btn" aria-label="Open setup" title="Open Setup">
+            <span aria-hidden="true"><i data-lucide="ruler"></i></span>
           </button>
-          <button id="btn-compact-placement" type="button" class="compact-icon-btn" aria-label="Vent placement quick actions" title="Vent Placement">
-            <span aria-hidden="true">
-              <svg viewBox="0 0 24 24" role="presentation" focusable="false"><path d="M4 13l8-8 8 8"/><path d="M6 13h12v6H6z"/><path d="M8 18h8"/></svg>
-            </span>
+          <button id="btn-compact-placement" type="button" class="compact-icon-btn" aria-label="Open vent placement" title="Open Vent Placement">
+            <span aria-hidden="true"><i data-lucide="blocks"></i></span>
           </button>
-          <button id="btn-compact-presets" type="button" class="compact-icon-btn" aria-label="Preset quick actions" title="Presets">
-            <span aria-hidden="true">
-              <svg viewBox="0 0 24 24" role="presentation" focusable="false"><path d="M5 6h14M5 12h10M5 18h7"/><circle cx="17" cy="12" r="2"/></svg>
-            </span>
+          <button id="btn-compact-presets" type="button" class="compact-icon-btn" aria-label="Open presets" title="Open Presets">
+            <span aria-hidden="true"><i data-lucide="sliders-vertical"></i></span>
           </button>
-          <button id="btn-compact-snapshots" type="button" class="compact-icon-btn" aria-label="Open presentation" title="Presentation">
-            <span aria-hidden="true">
-              <svg viewBox="0 0 24 24" role="presentation" focusable="false"><rect x="4" y="6" width="16" height="12" rx="2"/><circle cx="12" cy="12" r="3"/></svg>
-            </span>
-          </button>
-          <button id="btn-compact-open" type="button" class="compact-icon-btn compact-open-btn" aria-label="Open tool drawer" title="Open Drawer">
-            <span aria-hidden="true">
-              <svg viewBox="0 0 24 24" role="presentation" focusable="false"><path d="M6 14l6-6 6 6"/></svg>
-            </span>
+          <button id="btn-compact-snapshots" type="button" class="compact-icon-btn" aria-label="Open presentation" title="Open Presentation">
+            <span aria-hidden="true"><i data-lucide="monitor-play"></i></span>
           </button>
         </div>
 
+        <button id="btn-compact-open" type="button" class="compact-drawer-handle" aria-label="Open tool drawer" title="Open Tool Drawer">
+          <span class="compact-drawer-handle-bar" aria-hidden="true"></span>
+        </button>
+
         <div id="compact-quick-placement" class="compact-quick-actions" aria-label="Vent placement quick actions" hidden>
           <button id="btn-quick-placement-intake" type="button" class="compact-quick-btn" aria-label="Activate intake vent placement" title="Intake Vent">
-            <span aria-hidden="true">
-              <svg viewBox="0 0 24 24" role="presentation" focusable="false"><path d="M12 4v14"/><path d="M8 14l4 4 4-4"/></svg>
-            </span>
+            <span aria-hidden="true"><i data-lucide="arrow-right-to-line"></i></span>
           </button>
           <button id="btn-quick-placement-static" type="button" class="compact-quick-btn" aria-label="Activate static vent placement" title="Static Vent">
-            <span aria-hidden="true">
-              <svg viewBox="0 0 24 24" role="presentation" focusable="false"><rect x="7" y="7" width="10" height="10" rx="1"/></svg>
-            </span>
+            <span aria-hidden="true"><i data-lucide="arrow-right-from-line"></i></span>
           </button>
           <button id="btn-quick-placement-ridge" type="button" class="compact-quick-btn" aria-label="Activate ridge vent placement" title="Ridge Vent">
-            <span aria-hidden="true">
-              <svg viewBox="0 0 24 24" role="presentation" focusable="false"><path d="M4 15l8-8 8 8"/></svg>
-            </span>
+            <span aria-hidden="true"><i data-lucide="arrow-up-from-line"></i></span>
           </button>
         </div>
 
         <div id="compact-quick-presets" class="compact-quick-actions" aria-label="Preset quick actions" hidden>
           <button id="btn-quick-preset-intake" type="button" class="compact-quick-btn" aria-label="Apply intake only preset" title="Intake Only">
-            <span aria-hidden="true">
-              <svg viewBox="0 0 24 24" role="presentation" focusable="false"><path d="M3 12h14"/><path d="M13 8l4 4-4 4"/></svg>
-            </span>
+            <span aria-hidden="true"><i data-lucide="arrow-right-to-line"></i></span>
           </button>
           <button id="btn-quick-preset-exhaust" type="button" class="compact-quick-btn" aria-label="Apply exhaust only preset" title="Exhaust Only">
-            <span aria-hidden="true">
-              <svg viewBox="0 0 24 24" role="presentation" focusable="false"><path d="M7 12h14"/><path d="M17 8l4 4-4 4"/></svg>
-            </span>
+            <span aria-hidden="true"><i data-lucide="arrow-right-from-line"></i></span>
           </button>
           <button id="btn-quick-preset-balanced" type="button" class="compact-quick-btn" aria-label="Apply balanced preset" title="Balanced">
-            <span aria-hidden="true">
-              <svg viewBox="0 0 24 24" role="presentation" focusable="false"><path d="M4 14h16"/><path d="M8 14l4-6 4 6"/></svg>
-            </span>
+            <span aria-hidden="true"><i data-lucide="arrow-left-right"></i></span>
           </button>
         </div>
       </div>
@@ -280,9 +247,18 @@
           <div class="field-group control-group">
             <label>Vent Placement</label>
             <div class="button-grid">
-              <button id="btn-intake-vent" type="button" class="control-btn">Intake Vent</button>
-              <button id="btn-static-vent" type="button" class="control-btn">Static Vent</button>
-              <button id="btn-ridge-vent" type="button" class="control-btn">Ridge Vent</button>
+              <button id="btn-intake-vent" type="button" class="control-btn">
+                <span class="control-btn-icon" aria-hidden="true"><i data-lucide="arrow-right-to-line"></i></span>
+                <span>Intake Vent</span>
+              </button>
+              <button id="btn-static-vent" type="button" class="control-btn">
+                <span class="control-btn-icon" aria-hidden="true"><i data-lucide="arrow-right-from-line"></i></span>
+                <span>Static Vent</span>
+              </button>
+              <button id="btn-ridge-vent" type="button" class="control-btn">
+                <span class="control-btn-icon" aria-hidden="true"><i data-lucide="arrow-up-from-line"></i></span>
+                <span>Ridge Vent</span>
+              </button>
             </div>
           </div>
         </section>
@@ -400,6 +376,7 @@
     </div>
   </div>
 
+  <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
   <script type="module" src="main.js"></script>
 </body>
 </html>

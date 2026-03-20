@@ -149,6 +149,14 @@ let presentationBaseSnapshot = null;
 let isPresentationAutoCamera = false;
 let hasPresentationCameraOverride = false;
 let presentationCameraTransition = null;
+
+function initializeLucideIcons() {
+    if (!window.lucide || typeof window.lucide.createIcons !== "function") {
+        return;
+    }
+
+    window.lucide.createIcons();
+}
 let calculatorViewerEntryTimer = null;
 let calculatorViewerHintTimer = null;
 
@@ -2105,6 +2113,7 @@ function onRestoreCurrentLayoutClicked() {
 }
 
 // Build default geometry on load.
+initializeLucideIcons();
 rebuildGeometryFromInputs();
 refreshResultsPanel();
 updateVentStatusMessage({ forceReveal: true });
