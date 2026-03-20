@@ -87,6 +87,7 @@ const toolbarGridToggleButton = document.getElementById("btn-toolbar-grid-toggle
 const toolbarStartButton = document.getElementById("btn-toolbar-start");
 const toolbarResetButton = document.getElementById("btn-toolbar-reset");
 const toolbarResultsButton = document.getElementById("btn-toolbar-results");
+const workspace = document.getElementById("workspace");
 const compactSetupButton = document.getElementById("btn-compact-setup");
 const compactPlacementButton = document.getElementById("btn-compact-placement");
 const compactPresetsButton = document.getElementById("btn-compact-presets");
@@ -132,6 +133,9 @@ let snapshotSlideIdSeed = 1;
 let draggingSnapshotId = null;
 let importedAtticArea = null;
 let calculationSource = "geometry"; // "calculator" | "geometry"
+const GEOMETRY_MATCH_TOLERANCE_SQFT = 10;
+let calculatorViewerEntryTimer = null;
+let calculatorViewerHintTimer = null;
 
 // Store selected ventilation rule for future calculations.
 let selectedVentilationRule = ventRuleSelect?.value || "1/150";
@@ -143,6 +147,55 @@ const TAP_MOVE_THRESHOLD = 10;
 function toNumber(value, fallback) {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function isGeometryDependentTab(tab) {
+    return tab === "placement" || tab === "presets";
+}
+
+function getViewerDerivedAtticArea() {
+    const buildingWidth = Math.max(1, toNumber(houseWidthInput?.value, 30));
+    const buildingLength = Math.max(1, toNumber(houseLengthInput?.value, 50));
+    return calculateAtticArea(buildingWidth, buildingLength);
+}
+
+function getImportedGeometryMatchData() {
+    if (calculationSource !== "calculator" || importedAtticArea === null || importedAtticArea <= 0) {
+        return null;
+    }
+
+    const viewerArea = getViewerDerivedAtticArea();
+    const difference = Math.abs(viewerArea - importedAtticArea);
+
+    return {
+        importedArea: importedAtticArea,
+        viewerArea,
+        difference,
+        tolerance: GEOMETRY_MATCH_TOLERANCE_SQFT,
+        isWithinTolerance: difference <= GEOMETRY_MATCH_TOLERANCE_SQFT
+    };
+}
+
+function isImportedGeometryGateActive() {
+    const matchData = getImportedGeometryMatchData();
+    return Boolean(matchData && !matchData.isWithinTolerance);
+}
+
+function revealGeometryGateGuidance() {
+    openDrawerToTab("setup");
+    showTemporaryStatusMessage("Match viewer attic area to imported calculator area first", "info", 2100);
+}
+
+function syncImportedGeometryGateState() {
+    const geometryGateActive = isImportedGeometryGateActive();
+
+    if (geometryGateActive && isGeometryDependentTab(workspaceUiState.activeWorkspaceTab)) {
+        setWorkspaceTab("setup");
+    }
+
+    syncSetupImportBanner();
+    updateSimulationButtonUI();
+    updatePlacementButtonUI();
 }
 
 function createSnapshotSlide(snapshot, options = {}) {
@@ -727,12 +780,21 @@ function importSnapshotJson(jsonText, { restore = true, save = true } = {}) {
 
 function updateSimulationButtonUI() {
     const running = simulationState === SimulationState.RUNNING;
+    const geometryGateActive = isImportedGeometryGateActive();
 
     if (toolbarStartButton) {
-        toolbarStartButton.disabled = running;
+        toolbarStartButton.disabled = running || geometryGateActive;
         toolbarStartButton.classList.toggle("is-active", running);
-        toolbarStartButton.setAttribute("aria-label", running ? "Simulation running" : "Start simulation");
-        toolbarStartButton.setAttribute("title", running ? "Simulation Running" : "Start Simulation");
+        if (running) {
+            toolbarStartButton.setAttribute("aria-label", "Simulation running");
+            toolbarStartButton.setAttribute("title", "Simulation Running");
+        } else if (geometryGateActive) {
+            toolbarStartButton.setAttribute("aria-label", "Match viewer and imported attic area first");
+            toolbarStartButton.setAttribute("title", "Match viewer attic area to imported area before simulation");
+        } else {
+            toolbarStartButton.setAttribute("aria-label", "Start simulation");
+            toolbarStartButton.setAttribute("title", "Start Simulation");
+        }
     }
 }
 
@@ -754,6 +816,10 @@ function onGridToggleClicked() {
 }
 
 function setWorkspaceTab(tab) {
+    if (isImportedGeometryGateActive() && isGeometryDependentTab(tab)) {
+        tab = "setup";
+    }
+
     workspaceUiState.activeWorkspaceTab = tab;
 
     for (const button of workspaceTabButtons) {
@@ -774,6 +840,10 @@ function closeCompactQuickModes() {
 }
 
 function openDrawerToTab(tab) {
+    if (isImportedGeometryGateActive() && isGeometryDependentTab(tab)) {
+        tab = "setup";
+    }
+
     workspaceUiState.isDrawerOpen = true;
     closeCompactQuickModes();
     if (tab) {
@@ -797,6 +867,8 @@ function syncWorkspaceUiState() {
     compactQuickPlacement.hidden = workspaceUiState.compactQuickMode !== "placement";
     compactQuickPresets.hidden = workspaceUiState.compactQuickMode !== "presets";
 
+    const geometryGateActive = isImportedGeometryGateActive();
+
     const hasActivePlacementMode = activePlacementMode !== PlacementMode.NONE;
     compactPlacementButton?.classList.toggle("is-active", workspaceUiState.compactQuickMode === "placement" || hasActivePlacementMode);
     compactPresetsButton?.classList.toggle("is-active", workspaceUiState.compactQuickMode === "presets");
@@ -806,6 +878,22 @@ function syncWorkspaceUiState() {
     compactPresetsButton?.setAttribute("aria-pressed", workspaceUiState.compactQuickMode === "presets" ? "true" : "false");
     compactSetupButton?.setAttribute("aria-pressed", workspaceUiState.activeWorkspaceTab === "setup" ? "true" : "false");
     compactSnapshotsButton?.setAttribute("aria-pressed", workspaceUiState.activeWorkspaceTab === "snapshots" ? "true" : "false");
+    compactPlacementButton && (compactPlacementButton.disabled = geometryGateActive);
+    compactPresetsButton && (compactPresetsButton.disabled = geometryGateActive);
+    compactPlacementButton?.setAttribute("title", geometryGateActive ? "Match viewer attic area to imported area" : "Vent Placement");
+    compactPresetsButton?.setAttribute("title", geometryGateActive ? "Match viewer attic area to imported area" : "Presets");
+
+    for (const tabButton of workspaceTabButtons) {
+        const tab = tabButton.dataset.tab;
+        const tabIsLocked = Boolean(tab && isGeometryDependentTab(tab) && geometryGateActive);
+        tabButton.disabled = tabIsLocked;
+        tabButton.setAttribute("aria-disabled", tabIsLocked ? "true" : "false");
+        if (tabIsLocked) {
+            tabButton.setAttribute("title", "Match viewer attic area to imported area");
+        } else {
+            tabButton.removeAttribute("title");
+        }
+    }
 
     resultsPanel.classList.toggle("is-open", workspaceUiState.isResultsOpen);
     resultsPanel.setAttribute("aria-hidden", workspaceUiState.isResultsOpen ? "false" : "true");
@@ -1204,6 +1292,7 @@ function onGeometryInputChanged() {
     currentLayoutSource = "manual";
     rebuildGeometryFromInputs();
     refreshResultsPanel();
+    syncImportedGeometryGateState();
     updateVentStatusMessage();
 }
 
@@ -1215,6 +1304,12 @@ function onVentRuleChanged() {
 }
 
 function updatePlacementButtonUI() {
+    const geometryGateActive = isImportedGeometryGateActive();
+
+    if (geometryGateActive) {
+        activePlacementMode = PlacementMode.NONE;
+    }
+
     for (const item of placementButtons) {
         if (!item.button) {
             continue;
@@ -1223,17 +1318,28 @@ function updatePlacementButtonUI() {
         const isActive = item.mode === activePlacementMode;
         item.button.classList.toggle("is-active", isActive);
         item.button.setAttribute("aria-pressed", isActive ? "true" : "false");
-        item.button.disabled = simulationState === SimulationState.RUNNING;
+        item.button.disabled = simulationState === SimulationState.RUNNING || geometryGateActive;
+        item.button.setAttribute("title", geometryGateActive ? "Match viewer attic area to imported area before vent placement" : item.button.textContent || "Vent placement");
     }
 
     quickPlacementIntakeButton?.classList.toggle("is-active", activePlacementMode === PlacementMode.INTAKE);
     quickPlacementStaticButton?.classList.toggle("is-active", activePlacementMode === PlacementMode.STATIC);
     quickPlacementRidgeButton?.classList.toggle("is-active", activePlacementMode === PlacementMode.RIDGE);
+    quickPlacementIntakeButton && (quickPlacementIntakeButton.disabled = geometryGateActive);
+    quickPlacementStaticButton && (quickPlacementStaticButton.disabled = geometryGateActive);
+    quickPlacementRidgeButton && (quickPlacementRidgeButton.disabled = geometryGateActive);
+    quickPresetIntakeButton && (quickPresetIntakeButton.disabled = geometryGateActive);
+    quickPresetExhaustButton && (quickPresetExhaustButton.disabled = geometryGateActive);
+    quickPresetBalancedButton && (quickPresetBalancedButton.disabled = geometryGateActive);
+    toolbarIntakeOnlyButton && (toolbarIntakeOnlyButton.disabled = geometryGateActive);
+    toolbarExhaustOnlyButton && (toolbarExhaustOnlyButton.disabled = geometryGateActive);
+    toolbarBalancedButton && (toolbarBalancedButton.disabled = geometryGateActive);
 
     const viewer = renderer.domElement;
     const isPlacementActive =
         activePlacementMode !== PlacementMode.NONE &&
-        simulationState !== SimulationState.RUNNING;
+        simulationState !== SimulationState.RUNNING &&
+        !geometryGateActive;
 
     viewer.classList.toggle("placement-active", isPlacementActive);
 
@@ -1245,6 +1351,11 @@ function updatePlacementButtonUI() {
 }
 
 function handleCompactPlacementIconClick() {
+    if (isImportedGeometryGateActive()) {
+        revealGeometryGateGuidance();
+        return;
+    }
+
     if (workspaceUiState.isDrawerOpen) {
         openDrawerToTab("placement");
         return;
@@ -1259,6 +1370,11 @@ function handleCompactPlacementIconClick() {
 }
 
 function handleCompactPresetsIconClick() {
+    if (isImportedGeometryGateActive()) {
+        revealGeometryGateGuidance();
+        return;
+    }
+
     if (workspaceUiState.isDrawerOpen) {
         openDrawerToTab("presets");
         return;
@@ -1286,6 +1402,11 @@ function runCompactPresetAction(generator, source = "preset") {
 
 function setPlacementMode(mode) {
     if (simulationState === SimulationState.RUNNING) {
+        return;
+    }
+
+    if (isImportedGeometryGateActive()) {
+        revealGeometryGateGuidance();
         return;
     }
 
@@ -1366,7 +1487,7 @@ function isTapInteraction(event) {
 }
 
 function onViewerClicked(event) {
-    if (simulationState === SimulationState.RUNNING || activePlacementMode === PlacementMode.NONE) {
+    if (simulationState === SimulationState.RUNNING || activePlacementMode === PlacementMode.NONE || isImportedGeometryGateActive()) {
         pointerDownInfo = null;
         return;
     }
@@ -1408,7 +1529,7 @@ function onViewerClicked(event) {
 }
 
 function onViewerPointerMove(event) {
-    if (simulationState === SimulationState.RUNNING || activePlacementMode === PlacementMode.NONE) {
+    if (simulationState === SimulationState.RUNNING || activePlacementMode === PlacementMode.NONE || isImportedGeometryGateActive()) {
         hideVentPreview();
         return;
     }
@@ -1428,6 +1549,11 @@ function onViewerPointerLeave() {
 
 function onStartSimulationClicked() {
     if (simulationState === SimulationState.RUNNING || isSimulationRunning()) {
+        return;
+    }
+
+    if (isImportedGeometryGateActive()) {
+        revealGeometryGateGuidance();
         return;
     }
 
@@ -1470,6 +1596,11 @@ function onResetClicked() {
 
 function applyToolbarPreset(generator, source = "preset") {
     if (typeof generator !== "function") {
+        return;
+    }
+
+    if (isImportedGeometryGateActive()) {
+        revealGeometryGateGuidance();
         return;
     }
 
@@ -1683,8 +1814,59 @@ const calcCopyResultsButton = document.getElementById("btn-calc-copy-results");
 const calcShareResultsButton = document.getElementById("btn-calc-share-results");
 const setupImportBanner = document.getElementById("setup-import-banner");
 const setupImportAreaSpan = document.getElementById("setup-import-area");
+const setupViewerAreaSpan = document.getElementById("setup-viewer-area");
+const setupAreaMatchStatus = document.getElementById("setup-area-match-status");
+const setupImportBannerSub = document.getElementById("setup-import-banner-sub");
+const setupImportEntryHint = document.getElementById("setup-import-entry-hint");
 const btnCalcOpenViewer = document.getElementById("btn-calc-open-viewer");
 const btnSetupUseGeometry = document.getElementById("btn-setup-use-geometry");
+
+function focusViewerSetupInput() {
+    if (!houseWidthInput || !workspaceUiState.isDrawerOpen || workspaceUiState.activeWorkspaceTab !== "setup") {
+        return;
+    }
+
+    requestAnimationFrame(() => {
+        houseWidthInput.focus({ preventScroll: true });
+    });
+}
+
+function triggerCalculatorViewerEntryPolish() {
+    workspace?.classList.remove("is-mode-entering");
+    void workspace?.offsetWidth;
+    workspace?.classList.add("is-mode-entering");
+
+    if (!setupImportBanner || calculationSource !== "calculator" || importedAtticArea === null || importedAtticArea <= 0) {
+        return;
+    }
+
+    window.clearTimeout(calculatorViewerEntryTimer);
+    window.clearTimeout(calculatorViewerHintTimer);
+
+    setupImportBanner.classList.remove("is-highlighted");
+    void setupImportBanner.offsetWidth;
+    setupImportBanner.classList.add("is-highlighted");
+
+    if (setupImportEntryHint) {
+        setupImportEntryHint.hidden = false;
+        setupImportEntryHint.classList.remove("is-visible");
+        void setupImportEntryHint.offsetWidth;
+        setupImportEntryHint.classList.add("is-visible");
+    }
+
+    calculatorViewerEntryTimer = window.setTimeout(() => {
+        setupImportBanner.classList.remove("is-highlighted");
+    }, 1500);
+
+    calculatorViewerHintTimer = window.setTimeout(() => {
+        if (!setupImportEntryHint) {
+            return;
+        }
+
+        setupImportEntryHint.classList.remove("is-visible");
+        setupImportEntryHint.hidden = true;
+    }, 2600);
+}
 
 function updateVentRuleHelpText() {
     if (!calcRuleHelpText || !calcVentRuleSelect) {
@@ -1812,14 +1994,43 @@ function syncSetupImportBanner() {
         return;
     }
 
-    if (calculationSource === "calculator" && importedAtticArea !== null && importedAtticArea > 0) {
+    const matchData = getImportedGeometryMatchData();
+
+    if (matchData) {
         if (setupImportAreaSpan) {
-            setupImportAreaSpan.textContent = `${importedAtticArea.toLocaleString("en-US", { maximumFractionDigits: 0 })} sq ft`;
+            setupImportAreaSpan.textContent = `${matchData.importedArea.toLocaleString("en-US", { maximumFractionDigits: 0 })} sq ft`;
+        }
+
+        if (setupViewerAreaSpan) {
+            setupViewerAreaSpan.textContent = `${matchData.viewerArea.toLocaleString("en-US", { maximumFractionDigits: 1 })} sq ft`;
+        }
+
+        if (setupAreaMatchStatus) {
+            if (matchData.isWithinTolerance) {
+                setupAreaMatchStatus.textContent = `Within tolerance (±${matchData.tolerance} sq ft). Vent placement and simulation are enabled.`;
+            } else {
+                setupAreaMatchStatus.textContent = `Not yet matched (${matchData.difference.toFixed(1)} sq ft difference). Match the viewer attic area to the imported calculator area to enable vent placement and simulation.`;
+            }
+
+            setupAreaMatchStatus.classList.toggle("is-matched", matchData.isWithinTolerance);
+            setupAreaMatchStatus.classList.toggle("is-unmatched", !matchData.isWithinTolerance);
+        }
+
+        if (setupImportBannerSub) {
+            setupImportBannerSub.textContent = `Tolerance: within ±${matchData.tolerance} sq ft unlocks vent placement and simulation.`;
         }
 
         setupImportBanner.hidden = false;
     } else {
+        setupImportBanner.classList.remove("is-highlighted");
         setupImportBanner.hidden = true;
+        if (setupImportEntryHint) {
+            setupImportEntryHint.classList.remove("is-visible");
+            setupImportEntryHint.hidden = true;
+        }
+        if (setupAreaMatchStatus) {
+            setupAreaMatchStatus.classList.remove("is-matched", "is-unmatched");
+        }
     }
 }
 
@@ -1841,9 +2052,11 @@ function openViewerFromCalculator() {
 
     setAppMode("viewer");
     openDrawerToTab("setup");
-    syncSetupImportBanner();
     refreshResultsPanel();
+    syncImportedGeometryGateState();
     updateVentStatusMessage({ forceReveal: true });
+    focusViewerSetupInput();
+    triggerCalculatorViewerEntryPolish();
 }
 
 function setAppMode(mode) {
@@ -1890,6 +2103,7 @@ btnOpenViewer?.addEventListener("click", () => {
     calculationSource = "geometry";
     syncSetupImportBanner();
     refreshResultsPanel();
+    syncImportedGeometryGateState();
     setAppMode("viewer");
 });
 btnOpenCalculator?.addEventListener("click", () => setAppMode("calculator"));
@@ -1930,6 +2144,7 @@ btnSetupUseGeometry?.addEventListener("click", () => {
     importedAtticArea = null;
     syncSetupImportBanner();
     refreshResultsPanel();
+    syncImportedGeometryGateState();
     updateVentStatusMessage();
 });
 
