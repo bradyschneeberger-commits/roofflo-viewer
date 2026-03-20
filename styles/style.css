@@ -245,6 +245,12 @@ body {
   color: #ccfbf1;
 }
 
+.presentation-btn-secondary {
+  border-color: rgba(125, 211, 252, 0.42);
+  background: rgba(14, 116, 144, 0.22);
+  color: #bae6fd;
+}
+
 .presentation-btn-ghost {
   margin-left: auto;
   border-color: rgba(248, 113, 113, 0.42);

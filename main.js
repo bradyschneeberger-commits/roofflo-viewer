@@ -110,6 +110,7 @@ const presentationOverlay = document.getElementById("presentation-overlay");
 const presentationStepIndicator = document.getElementById("presentation-step-indicator");
 const presentationStepTitle = document.getElementById("presentation-step-title");
 const presentationStepSupport = document.getElementById("presentation-step-support");
+const presentationResumeButton = document.getElementById("btn-presentation-resume");
 const presentationBackButton = document.getElementById("btn-presentation-back");
 const presentationNextButton = document.getElementById("btn-presentation-next");
 const presentationExitButton = document.getElementById("btn-presentation-exit");
@@ -145,6 +146,8 @@ const GEOMETRY_MATCH_TOLERANCE_SQFT = 10;
 let isPresentationMode = false;
 let presentationStepIndex = 0;
 let presentationBaseSnapshot = null;
+let isPresentationAutoCamera = false;
+let hasPresentationCameraOverride = false;
 let calculatorViewerEntryTimer = null;
 let calculatorViewerHintTimer = null;
 
@@ -174,6 +177,8 @@ const presentationSteps = [
         scenario: "current-home"
     }
 ];
+
+const PRESENTATION_AUTO_ROTATE_SPEED = 0.55;
 
 // Store selected ventilation rule for future calculations.
 let selectedVentilationRule = ventRuleSelect?.value || "1/150";
@@ -236,6 +241,52 @@ function syncImportedGeometryGateState() {
     updatePlacementButtonUI();
 }
 
+function restartPresentationSimulation() {
+    resetAirflowSimulation();
+    simulationState = SimulationState.IDLE;
+
+    const started = startAirflowSimulation({
+        scene,
+        getGeometryState,
+        getVents: getAirflowVentState
+    });
+
+    if (started) {
+        simulationState = SimulationState.RUNNING;
+    }
+
+    updateSimulationButtonUI();
+}
+
+function setPresentationAutoCameraState(enabled, { userOverride = false } = {}) {
+    isPresentationAutoCamera = enabled;
+    hasPresentationCameraOverride = userOverride;
+
+    controls.autoRotate = enabled;
+    controls.autoRotateSpeed = PRESENTATION_AUTO_ROTATE_SPEED;
+    controls.enableDamping = true;
+    controls.enabled = isPresentationMode;
+
+    if (!isPresentationMode) {
+        controls.autoRotate = false;
+        controls.enabled = true;
+        hasPresentationCameraOverride = false;
+        isPresentationAutoCamera = false;
+    }
+
+    if (presentationResumeButton) {
+        presentationResumeButton.hidden = !isPresentationMode || !hasPresentationCameraOverride;
+    }
+}
+
+function interruptPresentationAutoCamera() {
+    if (!isPresentationMode || !isPresentationAutoCamera) {
+        return;
+    }
+
+    setPresentationAutoCameraState(false, { userOverride: true });
+}
+
 function updatePresentationStepUi() {
     if (!isPresentationMode) {
         return;
@@ -261,6 +312,9 @@ function updatePresentationStepUi() {
     if (presentationNextButton) {
         presentationNextButton.textContent = presentationStepIndex === presentationSteps.length - 1 ? "Finish" : "Next";
     }
+    if (presentationResumeButton) {
+        presentationResumeButton.hidden = !hasPresentationCameraOverride;
+    }
 }
 
 function syncPresentationUiState() {
@@ -278,8 +332,10 @@ function syncPresentationUiState() {
 
     if (isPresentationMode) {
         hideStatusPopover();
-        controls.enabled = false;
+        controls.enabled = true;
     }
+
+    setPresentationAutoCameraState(isPresentationMode && !hasPresentationCameraOverride, { userOverride: hasPresentationCameraOverride });
 
     updatePresentationStepUi();
     updateSimulationButtonUI();
@@ -317,6 +373,7 @@ function loadPresentationStep(index) {
     hideVentPreview();
     clearVentPreview();
 
+    restartPresentationSimulation();
     refreshResultsPanel();
     updateVentStatusMessage({ forceReveal: true });
     updatePresentationStepUi();
@@ -338,6 +395,7 @@ function enterPresentationMode() {
     isPresentationMode = true;
     presentationStepIndex = 0;
     closeCompactQuickModes();
+    hasPresentationCameraOverride = false;
     syncPresentationUiState();
     loadPresentationStep(0);
 }
@@ -351,6 +409,8 @@ function exitPresentationMode() {
     isPresentationMode = false;
     presentationStepIndex = 0;
     presentationBaseSnapshot = null;
+    hasPresentationCameraOverride = false;
+    setPresentationAutoCameraState(false);
 
     if (snapshotToRestore) {
         restoreViewerSnapshot(snapshotToRestore);
@@ -380,6 +440,14 @@ function onPresentationBackClicked() {
     }
 
     loadPresentationStep(presentationStepIndex - 1);
+}
+
+function onPresentationResumeClicked() {
+    if (!isPresentationMode) {
+        return;
+    }
+
+    setPresentationAutoCameraState(true, { userOverride: false });
 }
 
 function createSnapshotSlide(snapshot, options = {}) {
@@ -1539,7 +1607,7 @@ function updatePlacementButtonUI() {
 
     // Keep camera controls available even while a placement mode is active.
     // Tap-vs-drag detection below prevents accidental placement during orbit.
-    controls.enabled = !presentationLocked;
+    controls.enabled = true;
 
     syncWorkspaceUiState();
 }
@@ -1637,6 +1705,10 @@ function getPointerNdc(event) {
 }
 
 function onViewerPointerDown(event) {
+    if (isPresentationMode) {
+        interruptPresentationAutoCamera();
+    }
+
     const clientX =
         event.clientX ??
         event.changedTouches?.[0]?.clientX ??
@@ -1941,6 +2013,7 @@ quickPlacementRidgeButton?.addEventListener("click", () => runCompactPlacementAc
 quickPresetIntakeButton?.addEventListener("click", () => runCompactPresetAction(generateIntakeOnlyPreset, "preset"));
 quickPresetExhaustButton?.addEventListener("click", () => runCompactPresetAction(generateExhaustOnlyPreset, "preset"));
 quickPresetBalancedButton?.addEventListener("click", () => runCompactPresetAction(() => generateBalancedPreset({ ventilationRule: selectedVentilationRule }), "preset"));
+presentationResumeButton?.addEventListener("click", onPresentationResumeClicked);
 presentationBackButton?.addEventListener("click", onPresentationBackClicked);
 presentationNextButton?.addEventListener("click", onPresentationNextClicked);
 presentationExitButton?.addEventListener("click", exitPresentationMode);
@@ -1967,6 +2040,11 @@ renderer.domElement.addEventListener("pointerdown", onViewerPointerDown);
 renderer.domElement.addEventListener("pointerup", onViewerClicked);
 renderer.domElement.addEventListener("pointermove", onViewerPointerMove);
 renderer.domElement.addEventListener("pointerleave", onViewerPointerLeave);
+renderer.domElement.addEventListener("wheel", () => {
+    if (isPresentationMode) {
+        interruptPresentationAutoCamera();
+    }
+}, { passive: true });
 
 window.addEventListener("keydown", onSnapshotStripKeydown);
 
