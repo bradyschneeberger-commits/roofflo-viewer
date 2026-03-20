@@ -67,6 +67,12 @@
           <svg viewBox="0 0 24 24" role="presentation" focusable="false"><path d="M6 5h12M6 12h8M6 19h12"/></svg>
         </span>
       </button>
+      <button id="btn-toolbar-presentation" type="button" class="workspace-action-btn workspace-presentation-btn" aria-label="Start presentation mode" title="Start Presentation">
+        <span class="workspace-action-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" role="presentation" focusable="false"><path d="M8 6l10 6-10 6z"/><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+        </span>
+        <span class="workspace-presentation-btn-label">Present</span>
+      </button>
       <div class="status-indicator-wrap">
         <button id="btn-toolbar-status" type="button" class="workspace-action-btn workspace-status-btn" aria-label="Ventilation status" title="Ventilation Status" aria-expanded="false" aria-controls="vent-status-toast">
           <span class="workspace-action-icon" aria-hidden="true">
@@ -305,6 +311,19 @@
           </div>
           <div id="snapshot-strip" class="snapshot-strip" role="list"></div>
         </section>
+      </div>
+    </section>
+
+    <section id="presentation-overlay" class="presentation-overlay" aria-live="polite" hidden>
+      <div class="presentation-card" role="region" aria-label="Presentation step">
+        <p id="presentation-step-indicator" class="presentation-step-indicator">Step 1 of 4</p>
+        <h2 id="presentation-step-title" class="presentation-step-title">No effective ventilation traps heat and moisture</h2>
+        <p id="presentation-step-support" class="presentation-step-support">Trapped heat and moisture can shorten roof life and damage the roof system.</p>
+        <div class="presentation-controls">
+          <button id="btn-presentation-back" type="button" class="presentation-btn">Back</button>
+          <button id="btn-presentation-next" type="button" class="presentation-btn presentation-btn-primary">Next</button>
+          <button id="btn-presentation-exit" type="button" class="presentation-btn presentation-btn-ghost">Exit Presentation</button>
+        </div>
       </div>
     </section>
   </main>

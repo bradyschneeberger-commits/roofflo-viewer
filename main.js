@@ -87,6 +87,7 @@ const toolbarGridToggleButton = document.getElementById("btn-toolbar-grid-toggle
 const toolbarStartButton = document.getElementById("btn-toolbar-start");
 const toolbarResetButton = document.getElementById("btn-toolbar-reset");
 const toolbarResultsButton = document.getElementById("btn-toolbar-results");
+const toolbarPresentationButton = document.getElementById("btn-toolbar-presentation");
 const workspace = document.getElementById("workspace");
 const compactSetupButton = document.getElementById("btn-compact-setup");
 const compactPlacementButton = document.getElementById("btn-compact-placement");
@@ -105,6 +106,13 @@ const snapshotStrip = document.getElementById("snapshot-strip");
 const snapshotAddButton = document.getElementById("btn-snapshot-add");
 const workspaceTabButtons = Array.from(document.querySelectorAll(".workspace-tab"));
 const workspaceTabPanels = Array.from(document.querySelectorAll(".workspace-tab-panel"));
+const presentationOverlay = document.getElementById("presentation-overlay");
+const presentationStepIndicator = document.getElementById("presentation-step-indicator");
+const presentationStepTitle = document.getElementById("presentation-step-title");
+const presentationStepSupport = document.getElementById("presentation-step-support");
+const presentationBackButton = document.getElementById("btn-presentation-back");
+const presentationNextButton = document.getElementById("btn-presentation-next");
+const presentationExitButton = document.getElementById("btn-presentation-exit");
 
 const placementButtons = [
     { mode: PlacementMode.INTAKE, button: intakeVentButton },
@@ -134,8 +142,38 @@ let draggingSnapshotId = null;
 let importedAtticArea = null;
 let calculationSource = "geometry"; // "calculator" | "geometry"
 const GEOMETRY_MATCH_TOLERANCE_SQFT = 10;
+let isPresentationMode = false;
+let presentationStepIndex = 0;
+let presentationBaseSnapshot = null;
 let calculatorViewerEntryTimer = null;
 let calculatorViewerHintTimer = null;
+
+const presentationSteps = [
+    {
+        id: "baseline",
+        title: "No effective ventilation traps heat and moisture",
+        support: "Trapped heat and moisture can shorten roof life and damage the roof system.",
+        scenario: "none"
+    },
+    {
+        id: "imbalanced",
+        title: "An unbalanced system restricts airflow",
+        support: "Adding only one side of the system limits performance.",
+        scenario: "exhaust-only"
+    },
+    {
+        id: "balanced",
+        title: "Balanced ventilation moves air through the attic",
+        support: "Intake and exhaust work together to help heat and moisture escape.",
+        scenario: "balanced"
+    },
+    {
+        id: "this-home",
+        title: "This home needs a complete, balanced roof ventilation system",
+        support: "Proper ventilation helps protect shingles, decking, and overall roof performance.",
+        scenario: "current-home"
+    }
+];
 
 // Store selected ventilation rule for future calculations.
 let selectedVentilationRule = ventRuleSelect?.value || "1/150";
@@ -196,6 +234,152 @@ function syncImportedGeometryGateState() {
     syncSetupImportBanner();
     updateSimulationButtonUI();
     updatePlacementButtonUI();
+}
+
+function updatePresentationStepUi() {
+    if (!isPresentationMode) {
+        return;
+    }
+
+    const step = presentationSteps[presentationStepIndex];
+    if (!step) {
+        return;
+    }
+
+    if (presentationStepIndicator) {
+        presentationStepIndicator.textContent = `Step ${presentationStepIndex + 1} of ${presentationSteps.length}`;
+    }
+    if (presentationStepTitle) {
+        presentationStepTitle.textContent = step.title;
+    }
+    if (presentationStepSupport) {
+        presentationStepSupport.textContent = step.support;
+    }
+    if (presentationBackButton) {
+        presentationBackButton.disabled = presentationStepIndex === 0;
+    }
+    if (presentationNextButton) {
+        presentationNextButton.textContent = presentationStepIndex === presentationSteps.length - 1 ? "Finish" : "Next";
+    }
+}
+
+function syncPresentationUiState() {
+    workspace?.classList.toggle("is-presentation-mode", isPresentationMode);
+
+    if (presentationOverlay) {
+        presentationOverlay.hidden = !isPresentationMode;
+    }
+
+    if (toolbarPresentationButton) {
+        toolbarPresentationButton.classList.toggle("is-active", isPresentationMode);
+        toolbarPresentationButton.setAttribute("aria-label", isPresentationMode ? "Presentation mode active" : "Start presentation mode");
+        toolbarPresentationButton.setAttribute("title", isPresentationMode ? "Presentation Mode Active" : "Start Presentation");
+    }
+
+    if (isPresentationMode) {
+        hideStatusPopover();
+        controls.enabled = false;
+    }
+
+    updatePresentationStepUi();
+    updateSimulationButtonUI();
+    updatePlacementButtonUI();
+}
+
+function loadPresentationStep(index) {
+    if (!isPresentationMode || !presentationBaseSnapshot) {
+        return false;
+    }
+
+    const clampedIndex = Math.max(0, Math.min(presentationSteps.length - 1, index));
+    presentationStepIndex = clampedIndex;
+    const step = presentationSteps[presentationStepIndex];
+
+    const restored = restoreViewerSnapshot(presentationBaseSnapshot);
+    if (!restored) {
+        return false;
+    }
+
+    if (step.scenario === "none") {
+        clearAllVents();
+    } else if (step.scenario === "exhaust-only") {
+        clearAllVents();
+        generateExhaustOnlyPreset();
+    } else if (step.scenario === "balanced") {
+        clearAllVents();
+        generateBalancedPreset({ ventilationRule: selectedVentilationRule });
+    }
+
+    simulationState = SimulationState.IDLE;
+    activePlacementMode = PlacementMode.NONE;
+    pointerDownInfo = null;
+    cancelPendingRidgePlacement();
+    hideVentPreview();
+    clearVentPreview();
+
+    refreshResultsPanel();
+    updateVentStatusMessage({ forceReveal: true });
+    updatePresentationStepUi();
+    updateSimulationButtonUI();
+    updatePlacementButtonUI();
+    return true;
+}
+
+function enterPresentationMode() {
+    if (isPresentationMode) {
+        return;
+    }
+
+    presentationBaseSnapshot = createViewerSnapshot({ source: currentLayoutSource || "unknown" });
+    if (!presentationBaseSnapshot) {
+        return;
+    }
+
+    isPresentationMode = true;
+    presentationStepIndex = 0;
+    closeCompactQuickModes();
+    syncPresentationUiState();
+    loadPresentationStep(0);
+}
+
+function exitPresentationMode() {
+    if (!isPresentationMode) {
+        return;
+    }
+
+    const snapshotToRestore = presentationBaseSnapshot;
+    isPresentationMode = false;
+    presentationStepIndex = 0;
+    presentationBaseSnapshot = null;
+
+    if (snapshotToRestore) {
+        restoreViewerSnapshot(snapshotToRestore);
+    }
+
+    syncPresentationUiState();
+    refreshResultsPanel();
+    updateVentStatusMessage({ forceReveal: true });
+}
+
+function onPresentationNextClicked() {
+    if (!isPresentationMode) {
+        return;
+    }
+
+    if (presentationStepIndex >= presentationSteps.length - 1) {
+        exitPresentationMode();
+        return;
+    }
+
+    loadPresentationStep(presentationStepIndex + 1);
+}
+
+function onPresentationBackClicked() {
+    if (!isPresentationMode) {
+        return;
+    }
+
+    loadPresentationStep(presentationStepIndex - 1);
 }
 
 function createSnapshotSlide(snapshot, options = {}) {
@@ -781,13 +965,17 @@ function importSnapshotJson(jsonText, { restore = true, save = true } = {}) {
 function updateSimulationButtonUI() {
     const running = simulationState === SimulationState.RUNNING;
     const geometryGateActive = isImportedGeometryGateActive();
+    const presentationLocked = isPresentationMode;
 
     if (toolbarStartButton) {
-        toolbarStartButton.disabled = running || geometryGateActive;
+        toolbarStartButton.disabled = running || geometryGateActive || presentationLocked;
         toolbarStartButton.classList.toggle("is-active", running);
         if (running) {
             toolbarStartButton.setAttribute("aria-label", "Simulation running");
             toolbarStartButton.setAttribute("title", "Simulation Running");
+        } else if (presentationLocked) {
+            toolbarStartButton.setAttribute("aria-label", "Exit presentation mode to start simulation");
+            toolbarStartButton.setAttribute("title", "Exit Presentation to start simulation");
         } else if (geometryGateActive) {
             toolbarStartButton.setAttribute("aria-label", "Match viewer and imported attic area first");
             toolbarStartButton.setAttribute("title", "Match viewer attic area to imported area before simulation");
@@ -1305,8 +1493,9 @@ function onVentRuleChanged() {
 
 function updatePlacementButtonUI() {
     const geometryGateActive = isImportedGeometryGateActive();
+    const presentationLocked = isPresentationMode;
 
-    if (geometryGateActive) {
+    if (geometryGateActive || presentationLocked) {
         activePlacementMode = PlacementMode.NONE;
     }
 
@@ -1318,34 +1507,39 @@ function updatePlacementButtonUI() {
         const isActive = item.mode === activePlacementMode;
         item.button.classList.toggle("is-active", isActive);
         item.button.setAttribute("aria-pressed", isActive ? "true" : "false");
-        item.button.disabled = simulationState === SimulationState.RUNNING || geometryGateActive;
-        item.button.setAttribute("title", geometryGateActive ? "Match viewer attic area to imported area before vent placement" : item.button.textContent || "Vent placement");
+        item.button.disabled = simulationState === SimulationState.RUNNING || geometryGateActive || presentationLocked;
+        item.button.setAttribute("title", presentationLocked
+            ? "Exit presentation mode to edit vents"
+            : (geometryGateActive
+                ? "Match viewer attic area to imported area before vent placement"
+                : item.button.textContent || "Vent placement"));
     }
 
     quickPlacementIntakeButton?.classList.toggle("is-active", activePlacementMode === PlacementMode.INTAKE);
     quickPlacementStaticButton?.classList.toggle("is-active", activePlacementMode === PlacementMode.STATIC);
     quickPlacementRidgeButton?.classList.toggle("is-active", activePlacementMode === PlacementMode.RIDGE);
-    quickPlacementIntakeButton && (quickPlacementIntakeButton.disabled = geometryGateActive);
-    quickPlacementStaticButton && (quickPlacementStaticButton.disabled = geometryGateActive);
-    quickPlacementRidgeButton && (quickPlacementRidgeButton.disabled = geometryGateActive);
-    quickPresetIntakeButton && (quickPresetIntakeButton.disabled = geometryGateActive);
-    quickPresetExhaustButton && (quickPresetExhaustButton.disabled = geometryGateActive);
-    quickPresetBalancedButton && (quickPresetBalancedButton.disabled = geometryGateActive);
-    toolbarIntakeOnlyButton && (toolbarIntakeOnlyButton.disabled = geometryGateActive);
-    toolbarExhaustOnlyButton && (toolbarExhaustOnlyButton.disabled = geometryGateActive);
-    toolbarBalancedButton && (toolbarBalancedButton.disabled = geometryGateActive);
+    quickPlacementIntakeButton && (quickPlacementIntakeButton.disabled = geometryGateActive || presentationLocked);
+    quickPlacementStaticButton && (quickPlacementStaticButton.disabled = geometryGateActive || presentationLocked);
+    quickPlacementRidgeButton && (quickPlacementRidgeButton.disabled = geometryGateActive || presentationLocked);
+    quickPresetIntakeButton && (quickPresetIntakeButton.disabled = geometryGateActive || presentationLocked);
+    quickPresetExhaustButton && (quickPresetExhaustButton.disabled = geometryGateActive || presentationLocked);
+    quickPresetBalancedButton && (quickPresetBalancedButton.disabled = geometryGateActive || presentationLocked);
+    toolbarIntakeOnlyButton && (toolbarIntakeOnlyButton.disabled = geometryGateActive || presentationLocked);
+    toolbarExhaustOnlyButton && (toolbarExhaustOnlyButton.disabled = geometryGateActive || presentationLocked);
+    toolbarBalancedButton && (toolbarBalancedButton.disabled = geometryGateActive || presentationLocked);
 
     const viewer = renderer.domElement;
     const isPlacementActive =
         activePlacementMode !== PlacementMode.NONE &&
         simulationState !== SimulationState.RUNNING &&
-        !geometryGateActive;
+        !geometryGateActive &&
+        !presentationLocked;
 
     viewer.classList.toggle("placement-active", isPlacementActive);
 
     // Keep camera controls available even while a placement mode is active.
     // Tap-vs-drag detection below prevents accidental placement during orbit.
-    controls.enabled = true;
+    controls.enabled = !presentationLocked;
 
     syncWorkspaceUiState();
 }
@@ -1401,6 +1595,10 @@ function runCompactPresetAction(generator, source = "preset") {
 }
 
 function setPlacementMode(mode) {
+    if (isPresentationMode) {
+        return;
+    }
+
     if (simulationState === SimulationState.RUNNING) {
         return;
     }
@@ -1487,7 +1685,7 @@ function isTapInteraction(event) {
 }
 
 function onViewerClicked(event) {
-    if (simulationState === SimulationState.RUNNING || activePlacementMode === PlacementMode.NONE || isImportedGeometryGateActive()) {
+    if (isPresentationMode || simulationState === SimulationState.RUNNING || activePlacementMode === PlacementMode.NONE || isImportedGeometryGateActive()) {
         pointerDownInfo = null;
         return;
     }
@@ -1529,7 +1727,7 @@ function onViewerClicked(event) {
 }
 
 function onViewerPointerMove(event) {
-    if (simulationState === SimulationState.RUNNING || activePlacementMode === PlacementMode.NONE || isImportedGeometryGateActive()) {
+    if (isPresentationMode || simulationState === SimulationState.RUNNING || activePlacementMode === PlacementMode.NONE || isImportedGeometryGateActive()) {
         hideVentPreview();
         return;
     }
@@ -1548,6 +1746,10 @@ function onViewerPointerLeave() {
 }
 
 function onStartSimulationClicked() {
+    if (isPresentationMode) {
+        return;
+    }
+
     if (simulationState === SimulationState.RUNNING || isSimulationRunning()) {
         return;
     }
@@ -1596,6 +1798,10 @@ function onResetClicked() {
 
 function applyToolbarPreset(generator, source = "preset") {
     if (typeof generator !== "function") {
+        return;
+    }
+
+    if (isPresentationMode) {
         return;
     }
 
@@ -1716,6 +1922,14 @@ toolbarGridToggleButton?.addEventListener("click", onGridToggleClicked);
 toolbarStartButton?.addEventListener("click", onStartSimulationClicked);
 toolbarResetButton?.addEventListener("click", onResetClicked);
 toolbarResultsButton?.addEventListener("click", toggleResultsPanel);
+toolbarPresentationButton?.addEventListener("click", () => {
+    if (isPresentationMode) {
+        exitPresentationMode();
+        return;
+    }
+
+    enterPresentationMode();
+});
 compactSetupButton?.addEventListener("click", () => openDrawerToTab("setup"));
 compactSnapshotsButton?.addEventListener("click", () => openDrawerToTab("snapshots"));
 compactOpenButton?.addEventListener("click", () => openDrawerToTab(workspaceUiState.activeWorkspaceTab || "setup"));
@@ -1727,6 +1941,9 @@ quickPlacementRidgeButton?.addEventListener("click", () => runCompactPlacementAc
 quickPresetIntakeButton?.addEventListener("click", () => runCompactPresetAction(generateIntakeOnlyPreset, "preset"));
 quickPresetExhaustButton?.addEventListener("click", () => runCompactPresetAction(generateExhaustOnlyPreset, "preset"));
 quickPresetBalancedButton?.addEventListener("click", () => runCompactPresetAction(() => generateBalancedPreset({ ventilationRule: selectedVentilationRule }), "preset"));
+presentationBackButton?.addEventListener("click", onPresentationBackClicked);
+presentationNextButton?.addEventListener("click", onPresentationNextClicked);
+presentationExitButton?.addEventListener("click", exitPresentationMode);
 snapshotAddButton?.addEventListener("click", () => {
     const added = addSnapshotSlideFromCurrent();
     if (added) {
@@ -1760,6 +1977,7 @@ setWorkspaceTab(workspaceUiState.activeWorkspaceTab);
 syncWorkspaceUiState();
 setRestoreAvailabilityUI();
 renderSnapshotStrip();
+syncPresentationUiState();
 
 let lastAnimationTime = performance.now();
 
@@ -2060,6 +2278,10 @@ function openViewerFromCalculator() {
 }
 
 function setAppMode(mode) {
+    if (mode !== "viewer" && isPresentationMode) {
+        exitPresentationMode();
+    }
+
     if (launchScreen) {
         launchScreen.classList.toggle("is-hidden", mode !== "launch");
     }
