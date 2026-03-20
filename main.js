@@ -1663,14 +1663,212 @@ if (typeof window !== "undefined") {
     };
 }
 
-const launchStartButton = document.getElementById("start-btn");
+// ─── App Mode ─────────────────────────────────────────────────────────────
+// Modes: "launch" | "viewer" | "calculator"
 const launchScreen = document.getElementById("launch-screen");
+const calculatorScreen = document.getElementById("calculator-screen");
+const btnOpenViewer = document.getElementById("btn-open-viewer");
+const btnOpenCalculator = document.getElementById("btn-open-calculator");
+const btnCalcBack = document.getElementById("btn-calc-back");
 
-if (launchStartButton && launchScreen) {
-    launchStartButton.addEventListener("click", () => {
-        launchScreen.style.display = "none";
-    });
+const calcAtticAreaInput = document.getElementById("calc-attic-area");
+const calcVentRuleSelect = document.getElementById("calc-vent-rule");
+const calcResultsContainer = document.getElementById("calc-results");
+const calcResultTotal = document.getElementById("calc-result-total");
+const calcResultIntake = document.getElementById("calc-result-intake");
+const calcResultExhaust = document.getElementById("calc-result-exhaust");
+const calcRuleHelpText = document.getElementById("calc-rule-help-text");
+const calcCopyResultsButton = document.getElementById("btn-calc-copy-results");
+const calcShareResultsButton = document.getElementById("btn-calc-share-results");
+
+function updateVentRuleHelpText() {
+    if (!calcRuleHelpText || !calcVentRuleSelect) {
+        return;
+    }
+
+    if (calcVentRuleSelect.value === "1/300") {
+        calcRuleHelpText.textContent = "1/300 is allowed when the attic has a qualifying continuous vapor barrier to limit indoor moisture transfer.";
+        return;
+    }
+
+    calcRuleHelpText.textContent = "1/150 is typically used when a qualifying vapor barrier is not present.";
 }
+
+function getQuickCalculationSnapshot() {
+    if (!calcAtticAreaInput || !calcVentRuleSelect) {
+        return null;
+    }
+
+    const area = parseFloat(calcAtticAreaInput.value);
+    if (!Number.isFinite(area) || area <= 0) {
+        return null;
+    }
+
+    const rule = calcVentRuleSelect.value;
+    const required = calculateRequiredVentilation(area, rule);
+    const intake = calculateRequiredIntake(required);
+    const exhaust = calculateRequiredExhaust(required);
+
+    return {
+        area,
+        rule,
+        required,
+        intake,
+        exhaust
+    };
+}
+
+function buildQuickResultsText() {
+    const snapshot = getQuickCalculationSnapshot();
+    if (!snapshot) {
+        return "RoofFlo Quick Calculator\nEnter attic floor area to generate ventilation requirements.";
+    }
+
+    return [
+        "RoofFlo Quick Calculator",
+        `Attic Floor Area: ${snapshot.area.toFixed(1)} sq ft`,
+        `Ventilation Rule: ${snapshot.rule}`,
+        `Total Ventilation Required: ${formatVentilationValue(snapshot.required)}`,
+        `Intake Needed: ${formatVentilationValue(snapshot.intake)}`,
+        `Exhaust Needed: ${formatVentilationValue(snapshot.exhaust)}`
+    ].join("\n");
+}
+
+async function copyQuickResultsToClipboard(text) {
+    if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        return;
+    }
+
+    const temp = document.createElement("textarea");
+    temp.value = text;
+    temp.setAttribute("readonly", "");
+    temp.style.position = "absolute";
+    temp.style.left = "-9999px";
+    document.body.appendChild(temp);
+    temp.select();
+    document.execCommand("copy");
+    temp.remove();
+}
+
+function flashCalcActionButtonText(button, nextText, ms = 1400) {
+    if (!button) {
+        return;
+    }
+
+    const originalText = button.textContent;
+    button.textContent = nextText;
+    window.setTimeout(() => {
+        button.textContent = originalText;
+    }, ms);
+}
+
+async function onCopyQuickResults() {
+    if (!calcCopyResultsButton) {
+        return;
+    }
+
+    try {
+        const text = buildQuickResultsText();
+        await copyQuickResultsToClipboard(text);
+        flashCalcActionButtonText(calcCopyResultsButton, "Copied");
+    } catch (error) {
+        flashCalcActionButtonText(calcCopyResultsButton, "Copy Failed", 1800);
+    }
+}
+
+async function onShareQuickResults() {
+    if (!calcShareResultsButton || !navigator.share) {
+        return;
+    }
+
+    try {
+        await navigator.share({
+            title: "RoofFlo Quick Calculator",
+            text: buildQuickResultsText()
+        });
+    } catch (error) {
+        // User-canceled shares should be silent.
+    }
+}
+
+function setAppMode(mode) {
+    if (launchScreen) {
+        launchScreen.classList.toggle("is-hidden", mode !== "launch");
+    }
+    if (calculatorScreen) {
+        calculatorScreen.classList.toggle("is-visible", mode === "calculator");
+    }
+    if (mode === "calculator" && calcAtticAreaInput) {
+        // Use rAF so the element is fully visible before focusing (avoids display:none focus no-op)
+        requestAnimationFrame(() => {
+            calcAtticAreaInput.focus();
+            calcAtticAreaInput.select();
+        });
+    }
+}
+
+function runQuickCalculation() {
+    if (!calcAtticAreaInput || !calcVentRuleSelect || !calcResultsContainer) {
+        return;
+    }
+
+    const area = parseFloat(calcAtticAreaInput.value);
+    if (!Number.isFinite(area) || area <= 0) {
+        if (calcResultTotal) calcResultTotal.textContent = "—";
+        if (calcResultIntake) calcResultIntake.textContent = "—";
+        if (calcResultExhaust) calcResultExhaust.textContent = "—";
+        return;
+    }
+
+    const rule = calcVentRuleSelect.value;
+    const required = calculateRequiredVentilation(area, rule);
+    const intake = calculateRequiredIntake(required);
+    const exhaust = calculateRequiredExhaust(required);
+
+    if (calcResultTotal) calcResultTotal.textContent = formatVentilationValue(required);
+    if (calcResultIntake) calcResultIntake.textContent = formatVentilationValue(intake);
+    if (calcResultExhaust) calcResultExhaust.textContent = formatVentilationValue(exhaust);
+}
+
+btnOpenViewer?.addEventListener("click", () => setAppMode("viewer"));
+btnOpenCalculator?.addEventListener("click", () => setAppMode("calculator"));
+btnCalcBack?.addEventListener("click", () => setAppMode("launch"));
+
+calcAtticAreaInput?.addEventListener("input", runQuickCalculation);
+calcVentRuleSelect?.addEventListener("change", () => {
+    updateVentRuleHelpText();
+    runQuickCalculation();
+});
+
+calcAtticAreaInput?.addEventListener("blur", () => {
+    if (!calcAtticAreaInput) return;
+    const value = parseFloat(calcAtticAreaInput.value);
+    if (!calcAtticAreaInput.value.trim()) {
+        runQuickCalculation();
+        return;
+    }
+
+    if (!Number.isFinite(value) || value < 0) {
+        calcAtticAreaInput.value = "";
+        runQuickCalculation();
+    }
+});
+
+calcAtticAreaInput?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+        runQuickCalculation();
+    }
+});
+
+calcCopyResultsButton?.addEventListener("click", onCopyQuickResults);
+calcShareResultsButton?.addEventListener("click", onShareQuickResults);
+
+if (calcShareResultsButton && navigator.share) {
+    calcShareResultsButton.hidden = false;
+}
+
+updateVentRuleHelpText();
 
 export {
     selectedVentilationRule,

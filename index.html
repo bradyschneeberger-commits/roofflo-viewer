@@ -19,9 +19,24 @@
 <body>
   <div id="launch-screen">
     <div class="launch-content">
-      <h1>RoofFlo Ventilation Simulator</h1>
-      <p>Visualize attic airflow and ventilation balance.</p>
-      <button id="start-btn" type="button">Start Simulation</button>
+      <h1>RoofFlo</h1>
+      <p class="launch-tagline">Professional ventilation tools for contractors</p>
+      <div class="launch-options">
+        <button id="btn-open-viewer" type="button" class="launch-option-card">
+          <span class="launch-option-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" role="presentation" focusable="false"><path d="M3 11L12 4l9 7"/><path d="M5 10v10h14V10"/><path d="M9 20v-5h6v5"/></svg>
+          </span>
+          <span class="launch-option-title">Open Viewer</span>
+          <span class="launch-option-desc">Visualize airflow and vent placement</span>
+        </button>
+        <button id="btn-open-calculator" type="button" class="launch-option-card">
+          <span class="launch-option-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" role="presentation" focusable="false"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 7h6M9 11h3M9 15h3M14 11h1M14 15h1"/></svg>
+          </span>
+          <span class="launch-option-title">Quick Calculator</span>
+          <span class="launch-option-desc">Calculate ventilation requirements by attic area</span>
+        </button>
+      </div>
     </div>
   </div>
 
@@ -283,6 +298,74 @@
       </div>
     </section>
   </main>
+
+  <div id="calculator-screen">
+    <div class="calc-card">
+      <div class="calc-card-header">
+        <button id="btn-calc-back" type="button" class="calc-back-btn" aria-label="Back to launch screen">
+          <svg viewBox="0 0 24 24" role="presentation" focusable="false"><path d="M19 12H5"/><path d="M12 5l-7 7 7 7"/></svg>
+          Back to Launch
+        </button>
+        <h2 class="calc-title">Quick Calculator</h2>
+        <p class="calc-helper">Enter your attic floor area to see ventilation requirements instantly.</p>
+      </div>
+
+      <div class="calc-inputs">
+        <div class="calc-field-group">
+          <label for="calc-attic-area">Attic Floor Area (sq ft)</label>
+          <input id="calc-attic-area" type="number" inputmode="decimal" min="0" step="1" placeholder="e.g. 1500" autocomplete="off" aria-label="Attic floor area in square feet">
+        </div>
+
+        <div class="calc-field-group">
+          <label for="calc-vent-rule">Ventilation Rule</label>
+          <select id="calc-vent-rule">
+            <option value="1/150">1/150 — Standard (most homes)</option>
+            <option value="1/300">1/300 — With continuous vapor barrier</option>
+          </select>
+          <p id="calc-rule-help" class="calc-rule-help" aria-live="polite">
+            <span class="calc-rule-help-icon" aria-hidden="true">i</span>
+            <span id="calc-rule-help-text">1/150 is typically used when a qualifying vapor barrier is not present.</span>
+            <button
+              id="calc-rule-why-link"
+              type="button"
+              class="calc-why-link"
+              aria-label="Why this matters"
+              data-tooltip="The 1/300 rule can reduce required ventilation only when moisture movement from living space into the attic is controlled."
+            >
+              Why this matters
+            </button>
+          </p>
+        </div>
+      </div>
+
+      <div id="calc-results" class="calc-results">
+        <div class="calc-results-header">
+          <div class="calc-results-title-wrap">
+            <h3 class="calc-results-heading">Requirements</h3>
+            <p class="calc-balance-note">Balanced system: 50% intake / 50% exhaust</p>
+          </div>
+          <div class="calc-results-actions">
+            <button id="btn-calc-copy-results" type="button" class="calc-action-btn">Copy Results</button>
+            <button id="btn-calc-share-results" type="button" class="calc-action-btn" hidden>Share</button>
+          </div>
+        </div>
+        <div class="calc-result-grid">
+          <div class="calc-result-item calc-result-item-total">
+            <span class="calc-result-label">Total Ventilation Required</span>
+            <span id="calc-result-total" class="calc-result-value">—</span>
+          </div>
+          <div class="calc-result-item">
+            <span class="calc-result-label">Intake Needed</span>
+            <span id="calc-result-intake" class="calc-result-value">—</span>
+          </div>
+          <div class="calc-result-item">
+            <span class="calc-result-label">Exhaust Needed</span>
+            <span id="calc-result-exhaust" class="calc-result-value">—</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <script type="module" src="main.js"></script>
 </body>
