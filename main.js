@@ -2975,8 +2975,11 @@ if (typeof window !== "undefined") {
 // ─── App Mode ─────────────────────────────────────────────────────────────
 // Modes: "launch" | "viewer" | "calculator"
 const launchScreen = document.getElementById("launch-screen");
+const launchParticlesCanvas = document.getElementById("launch-particles-canvas");
+const launchContent = document.querySelector(".launch-content");
 const calculatorScreen = document.getElementById("calculator-screen");
 const btnOpenViewer = document.getElementById("btn-open-viewer");
+const btnOpenReport = document.getElementById("btn-open-report");
 const btnOpenCalculator = document.getElementById("btn-open-calculator");
 const btnCalcBack = document.getElementById("btn-calc-back");
 
@@ -2997,6 +3000,332 @@ const setupImportBannerSub = document.getElementById("setup-import-banner-sub");
 const setupImportEntryHint = document.getElementById("setup-import-entry-hint");
 const btnCalcOpenViewer = document.getElementById("btn-calc-open-viewer");
 const btnSetupUseGeometry = document.getElementById("btn-setup-use-geometry");
+
+const launchParticleState = {
+    ctx: null,
+    particles: [],
+    rafId: 0,
+    width: 0,
+    height: 0,
+    dpr: 1,
+    isRunning: false,
+    lastFrameTime: 0,
+    reducedMotion: false,
+    panelRect: null,
+    panelRectUpdatedAt: 0
+};
+
+const launchReducedMotionQuery = typeof window !== "undefined" && typeof window.matchMedia === "function"
+    ? window.matchMedia("(prefers-reduced-motion: reduce)")
+    : null;
+
+function randomLaunchParticleColor() {
+    const roll = Math.random();
+
+    if (roll < 0.87) {
+        return { rgb: "56, 132, 255", alphaScale: 1 };
+    }
+
+    if (roll < 0.98) {
+        return { rgb: "245, 158, 11", alphaScale: 0.92 };
+    }
+
+    return { rgb: "239, 68, 68", alphaScale: 0.78 };
+}
+
+function updateLaunchPanelRect() {
+    if (!launchContent) {
+        launchParticleState.panelRect = null;
+        return;
+    }
+
+    const rect = launchContent.getBoundingClientRect();
+    launchParticleState.panelRect = {
+        left: rect.left,
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.bottom
+    };
+    launchParticleState.panelRectUpdatedAt = performance.now();
+}
+
+function randomLaunchParticlePosition({ avoidCenter = false } = {}) {
+    const maxAttempts = avoidCenter ? 8 : 1;
+    const avoid = avoidCenter ? launchParticleState.panelRect : null;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+        const x = Math.random() * launchParticleState.width;
+        const y = Math.random() * launchParticleState.height;
+
+        if (!avoid || x < avoid.left || x > avoid.right || y < avoid.top || y > avoid.bottom) {
+            return { x, y };
+        }
+    }
+
+    return {
+        x: Math.random() * launchParticleState.width,
+        y: Math.random() * launchParticleState.height
+    };
+}
+
+function getLaunchParticleLayerConfig(layer) {
+    if (layer === "far") {
+        return {
+            speedMin: 0.05,
+            speedRange: 0.12,
+            driftMin: -0.26,
+            driftRange: 0.52,
+            radiusMin: 0.45,
+            radiusRange: 1.15,
+            alphaMin: 0.06,
+            alphaRange: 0.09,
+            swayAmpMin: 0.02,
+            swayAmpRange: 0.08,
+            swayFreqMin: 0.0012,
+            swayFreqRange: 0.0016
+        };
+    }
+
+    if (layer === "near") {
+        return {
+            speedMin: 0.17,
+            speedRange: 0.27,
+            driftMin: -0.54,
+            driftRange: 1.06,
+            radiusMin: 1.45,
+            radiusRange: 2.55,
+            alphaMin: 0.2,
+            alphaRange: 0.16,
+            swayAmpMin: 0.12,
+            swayAmpRange: 0.18,
+            swayFreqMin: 0.0016,
+            swayFreqRange: 0.002
+        };
+    }
+
+    return {
+        speedMin: 0.11,
+        speedRange: 0.24,
+        driftMin: -0.42,
+        driftRange: 0.86,
+        radiusMin: 0.8,
+        radiusRange: 2.15,
+        alphaMin: 0.14,
+        alphaRange: 0.16,
+        swayAmpMin: 0.06,
+        swayAmpRange: 0.12,
+        swayFreqMin: 0.0014,
+        swayFreqRange: 0.0018
+    };
+}
+
+function createLaunchParticle({ avoidCenter = false, layer = "mid" } = {}) {
+    const layerConfig = getLaunchParticleLayerConfig(layer);
+    const { x, y } = randomLaunchParticlePosition({ avoidCenter });
+    const speed = layerConfig.speedMin + (Math.random() * layerConfig.speedRange);
+    const driftAngle = layerConfig.driftMin + (Math.random() * layerConfig.driftRange);
+    const color = randomLaunchParticleColor();
+
+    return {
+        x,
+        y,
+        layer,
+        radius: layerConfig.radiusMin + (Math.random() * layerConfig.radiusRange),
+        vx: speed,
+        vy: speed * driftAngle,
+        alpha: (layerConfig.alphaMin + (Math.random() * layerConfig.alphaRange)) * color.alphaScale,
+        color: color.rgb,
+        swayAmplitude: layerConfig.swayAmpMin + (Math.random() * layerConfig.swayAmpRange),
+        swayFrequency: layerConfig.swayFreqMin + (Math.random() * layerConfig.swayFreqRange),
+        swayPhase: Math.random() * Math.PI * 2
+    };
+}
+
+function rebuildLaunchParticles() {
+    if (!launchParticlesCanvas || !launchParticleState.width || !launchParticleState.height) {
+        return;
+    }
+
+    const viewportArea = launchParticleState.width * launchParticleState.height;
+    const baseCount = Math.min(110, Math.max(52, Math.round(viewportArea / 30000)));
+    const farCount = Math.round(baseCount * 0.35);
+    const midCount = Math.round(baseCount * 1.95);
+    const nearCount = Math.round(baseCount * 0.3);
+    const layeredTargetCount = Math.min(280, farCount + midCount + nearCount);
+
+    const particles = [];
+
+    for (let i = 0; i < farCount && particles.length < layeredTargetCount; i += 1) {
+        particles.push(createLaunchParticle({ layer: "far" }));
+    }
+
+    for (let i = 0; i < midCount && particles.length < layeredTargetCount; i += 1) {
+        particles.push(createLaunchParticle({ layer: "mid" }));
+    }
+
+    for (let i = 0; i < nearCount && particles.length < layeredTargetCount; i += 1) {
+        particles.push(createLaunchParticle({ layer: "near" }));
+    }
+
+    launchParticleState.particles = particles;
+}
+
+function resizeLaunchParticles() {
+    if (!launchParticlesCanvas) {
+        return;
+    }
+
+    const rect = launchParticlesCanvas.getBoundingClientRect();
+    const width = Math.max(1, Math.floor(rect.width));
+    const height = Math.max(1, Math.floor(rect.height));
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+
+    launchParticleState.width = width;
+    launchParticleState.height = height;
+    launchParticleState.dpr = dpr;
+
+    launchParticlesCanvas.width = Math.floor(width * dpr);
+    launchParticlesCanvas.height = Math.floor(height * dpr);
+
+    if (launchParticleState.ctx) {
+        launchParticleState.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+
+    updateLaunchPanelRect();
+    rebuildLaunchParticles();
+}
+
+function getPanelAlphaMultiplierForParticle(particle) {
+    const panelRect = launchParticleState.panelRect;
+
+    if (!panelRect) {
+        return 1;
+    }
+
+    const inPanel = particle.x >= panelRect.left
+        && particle.x <= panelRect.right
+        && particle.y >= panelRect.top
+        && particle.y <= panelRect.bottom;
+
+    if (!inPanel) {
+        return 1;
+    }
+
+    if (particle.layer === "far") {
+        return 0.6;
+    }
+
+    if (particle.layer === "near") {
+        return 0.5;
+    }
+
+    return 0.52;
+}
+
+function renderLaunchParticles(timestamp) {
+    if (!launchParticleState.isRunning || !launchParticleState.ctx || !launchParticlesCanvas) {
+        return;
+    }
+
+    const ctx = launchParticleState.ctx;
+    const dtMs = launchParticleState.lastFrameTime ? Math.min(48, timestamp - launchParticleState.lastFrameTime) : 16;
+    const drift = dtMs / 16.666;
+    launchParticleState.lastFrameTime = timestamp;
+
+    if (!launchParticleState.panelRect || (timestamp - launchParticleState.panelRectUpdatedAt) > 650) {
+        updateLaunchPanelRect();
+    }
+
+    ctx.clearRect(0, 0, launchParticleState.width, launchParticleState.height);
+
+    for (const particle of launchParticleState.particles) {
+        const swayDelta = Math.sin((timestamp * particle.swayFrequency) + particle.swayPhase) * particle.swayAmplitude;
+        particle.x += particle.vx * drift;
+        particle.y += (particle.vy + swayDelta) * drift;
+
+        if (particle.x > launchParticleState.width + 8) {
+            const nextPosition = randomLaunchParticlePosition();
+            particle.x = -8;
+            particle.y = nextPosition.y;
+        }
+
+        if (particle.y < -10 || particle.y > launchParticleState.height + 10) {
+            particle.y = Math.random() * launchParticleState.height;
+        }
+
+        ctx.beginPath();
+        const panelAlphaMultiplier = getPanelAlphaMultiplierForParticle(particle);
+        const effectiveAlpha = Math.min(0.5, particle.alpha * 1.25 * panelAlphaMultiplier);
+        ctx.fillStyle = `rgba(${particle.color}, ${effectiveAlpha})`;
+        ctx.arc(particle.x, particle.y, particle.radius, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    launchParticleState.rafId = window.requestAnimationFrame(renderLaunchParticles);
+}
+
+function stopLaunchParticleAnimation() {
+    launchParticleState.isRunning = false;
+    launchParticleState.lastFrameTime = 0;
+
+    if (launchParticleState.rafId) {
+        window.cancelAnimationFrame(launchParticleState.rafId);
+        launchParticleState.rafId = 0;
+    }
+}
+
+function startLaunchParticleAnimation() {
+    if (!launchParticlesCanvas || !launchParticleState.ctx || launchParticleState.reducedMotion || launchParticleState.isRunning) {
+        return;
+    }
+
+    launchParticleState.isRunning = true;
+    launchParticleState.lastFrameTime = 0;
+    launchParticleState.rafId = window.requestAnimationFrame(renderLaunchParticles);
+}
+
+function syncLaunchParticleAnimation(mode) {
+    const shouldAnimate = mode === "launch" && !launchParticleState.reducedMotion;
+
+    if (shouldAnimate) {
+        startLaunchParticleAnimation();
+    } else {
+        stopLaunchParticleAnimation();
+    }
+}
+
+function initializeLaunchParticles() {
+    if (!launchParticlesCanvas) {
+        return;
+    }
+
+    launchParticleState.ctx = launchParticlesCanvas.getContext("2d", { alpha: true });
+
+    if (!launchParticleState.ctx) {
+        return;
+    }
+
+    launchParticleState.reducedMotion = Boolean(launchReducedMotionQuery?.matches);
+    resizeLaunchParticles();
+
+    window.addEventListener("resize", resizeLaunchParticles);
+
+    if (launchReducedMotionQuery) {
+        launchReducedMotionQuery.addEventListener("change", (event) => {
+            launchParticleState.reducedMotion = Boolean(event.matches);
+            syncLaunchParticleAnimation(launchScreen?.classList.contains("is-hidden") ? "viewer" : "launch");
+        });
+    }
+
+    document.addEventListener("visibilitychange", () => {
+        if (document.hidden) {
+            stopLaunchParticleAnimation();
+            return;
+        }
+
+        syncLaunchParticleAnimation(launchScreen?.classList.contains("is-hidden") ? "viewer" : "launch");
+    });
+}
 
 function focusViewerSetupInput() {
     if (!houseWidthInput || !workspaceUiState.isDrawerOpen || workspaceUiState.activeWorkspaceTab !== "setup") {
@@ -3236,6 +3565,21 @@ function openViewerFromCalculator() {
     triggerCalculatorViewerEntryPolish();
 }
 
+function openViewerFromLaunch() {
+    importedAtticArea = null;
+    calculationSource = "geometry";
+    syncSetupImportBanner();
+    refreshResultsPanel();
+    syncImportedGeometryGateState();
+    setAppMode("viewer");
+}
+
+function openQuickReportFromLaunch() {
+    openViewerFromLaunch();
+    const report = buildRoofFloReport();
+    openRoofFloReport(report);
+}
+
 function setAppMode(mode) {
     if (mode !== "viewer" && isPresentationMode) {
         exitPresentationMode();
@@ -3254,6 +3598,8 @@ function setAppMode(mode) {
             calcAtticAreaInput.select();
         });
     }
+
+    syncLaunchParticleAnimation(mode);
 }
 
 function runQuickCalculation() {
@@ -3279,14 +3625,8 @@ function runQuickCalculation() {
     if (calcResultExhaust) calcResultExhaust.textContent = formatVentilationValue(exhaust);
 }
 
-btnOpenViewer?.addEventListener("click", () => {
-    importedAtticArea = null;
-    calculationSource = "geometry";
-    syncSetupImportBanner();
-    refreshResultsPanel();
-    syncImportedGeometryGateState();
-    setAppMode("viewer");
-});
+btnOpenViewer?.addEventListener("click", openViewerFromLaunch);
+btnOpenReport?.addEventListener("click", openQuickReportFromLaunch);
 btnOpenCalculator?.addEventListener("click", () => setAppMode("calculator"));
 btnCalcBack?.addEventListener("click", () => setAppMode("launch"));
 
@@ -3333,6 +3673,8 @@ if (calcShareResultsButton && navigator.share) {
     calcShareResultsButton.hidden = false;
 }
 
+initializeLaunchParticles();
+syncLaunchParticleAnimation("launch");
 updateVentRuleHelpText();
 
 export {
