@@ -449,69 +449,100 @@ body {
   color: #ccfbf1;
 }
 
-/* ── Report Verdict block ─────────────────────────────────────── */
-/* ── Report Verdict hero ──────────────────────────────────────── */
-.report-verdict {
+/* ── Report decision columns ──────────────────────────────────── */
+.report-decision-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.report-decision-card {
   border-radius: 14px;
-  border: 1px solid rgba(251, 191, 36, 0.54);
-  background: rgba(120, 53, 15, 0.36);
-  padding: 22px 24px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  background: rgba(30, 41, 59, 0.56);
+  padding: 14px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  box-shadow: 0 4px 18px rgba(2, 6, 23, 0.28);
+  gap: 10px;
 }
 
-.report-verdict-label {
+.report-decision-card--verdict {
+  border-color: rgba(148, 163, 184, 0.4);
+}
+
+.report-decision-card--action {
+  border-color: rgba(45, 212, 191, 0.46);
+  background: rgba(13, 148, 136, 0.14);
+}
+
+.report-decision-title {
   margin: 0;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 760;
-  letter-spacing: 0.09em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: rgba(251, 191, 36, 0.9);
+  color: rgba(203, 213, 225, 0.84);
 }
 
-.report-verdict-status-lines {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.report-verdict-status-line {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+.report-verdict-status {
   margin: 0;
-  font-size: 17px;
-  font-weight: 650;
-  color: rgba(226, 232, 240, 0.9);
-  line-height: 1.3;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  min-width: 78px;
+  height: 30px;
+  border-radius: 999px;
+  padding: 0 12px;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
 }
 
-.report-verdict-status-icon {
-  flex-shrink: 0;
-  font-size: 16px;
-  line-height: 1;
+.report-verdict-status.is-pass {
+  color: #bbf7d0;
+  border: 1px solid rgba(74, 222, 128, 0.62);
+  background: rgba(20, 83, 45, 0.34);
 }
 
-.report-verdict-status-line--current strong {
-  font-weight: 760;
-  color: #fca5a5;
-}
-
-.report-verdict-status-line--solution strong {
-  font-weight: 760;
-  color: #86efac;
+.report-verdict-status.is-fail {
+  color: #fecaca;
+  border: 1px solid rgba(248, 113, 113, 0.62);
+  background: rgba(127, 29, 29, 0.34);
 }
 
 .report-verdict-summary {
   margin: 0;
   font-size: 13px;
-  font-weight: 550;
-  color: rgba(254, 243, 199, 0.84);
   line-height: 1.5;
-  border-top: 1px solid rgba(251, 191, 36, 0.22);
-  padding-top: 12px;
+  color: rgba(226, 232, 240, 0.92);
+}
+
+.report-action-heading {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 760;
+  color: #ccfbf1;
+}
+
+.report-action-items {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+}
+
+.report-action-items li {
+  font-size: 13px;
+  line-height: 1.45;
+  color: rgba(226, 232, 240, 0.94);
+}
+
+.report-action-closing {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #99f6e4;
 }
 
 /* ── Solution card emphasis ───────────────────────────────────── */
@@ -824,6 +855,11 @@ body {
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  z-index: 2;
+}
+
+#control-panel.has-compact-quick-open .compact-drawer-handle {
+  top: -62px;
 }
 
 .compact-drawer-handle-bar {
@@ -1546,6 +1582,10 @@ select:focus {
     grid-template-columns: 1fr;
   }
 
+  .report-decision-grid {
+    grid-template-columns: 1fr;
+  }
+
   .report-header {
     flex-direction: column;
     align-items: flex-start;
@@ -1563,9 +1603,6 @@ select:focus {
     margin: 0 0 4px;
   }
 
-  .report-verdict-status-line {
-    font-size: 15px;
-  }
 }
 
 @media (max-width: 520px) {

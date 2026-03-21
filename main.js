@@ -141,8 +141,11 @@ const reportSolutionStatus = document.getElementById("report-solution-status");
 const reportExplanationHeadline = document.getElementById("report-explanation-headline");
 const reportExplanationSummary = document.getElementById("report-explanation-summary");
 const reportExplanationBullets = document.getElementById("report-explanation-bullets");
+const reportVerdictStatus = document.getElementById("report-verdict-status");
 const reportVerdictSummary = document.getElementById("report-verdict-summary");
-const reportVerdictFollowup = document.getElementById("report-verdict-followup");
+const reportActionHeading = document.getElementById("report-action-heading");
+const reportActionItems = document.getElementById("report-action-items");
+const reportActionClosing = document.getElementById("report-action-closing");
 const reportCurrentIntakeDiff = document.getElementById("report-current-intake-diff");
 const reportCurrentExhaustDiff = document.getElementById("report-current-exhaust-diff");
 const reportSolutionIntakeDiff = document.getElementById("report-solution-intake-diff");
@@ -151,8 +154,6 @@ const reportBackViewerButton = document.getElementById("btn-report-back-viewer")
 const reportExplanationClosing = document.getElementById("report-explanation-closing");
 const reportCurrentRidgeHelper = document.getElementById("report-current-ridge-helper");
 const reportSolutionRidgeHelper = document.getElementById("report-solution-ridge-helper");
-const reportVerdictCurrentStatus = document.getElementById("report-verdict-current-status");
-const reportVerdictSolutionStatus = document.getElementById("report-verdict-solution-status");
 const reportCloseButton = document.getElementById("btn-report-close");
 
 const placementButtons = [
@@ -193,6 +194,54 @@ let presentationSolutionPhase = 0;
 let isSolutionSequenceRunning = false;
 let presentationSolutionTimers = [];
 let activeReport = null;
+let presentationGridVisibilityBefore = null;
+
+function setPresentationFootprintEmphasis(enabled) {
+    const geometryState = getGeometryState();
+    const footprint = geometryState?.buildingFootprintBase;
+
+    if (!footprint || !footprint.material) {
+        return;
+    }
+
+    const materials = Array.isArray(footprint.material) ? footprint.material : [footprint.material];
+
+    for (const material of materials) {
+        if (!material) {
+            continue;
+        }
+
+        if (!material.userData.__footprintBaseStyle) {
+            material.userData.__footprintBaseStyle = {
+                opacity: material.opacity,
+                roughness: material.roughness,
+                metalness: material.metalness
+            };
+        }
+
+        const baseStyle = material.userData.__footprintBaseStyle;
+
+        if (enabled) {
+            material.opacity = Math.min((baseStyle.opacity ?? 0.85) + 0.12, 0.98);
+            if (typeof material.roughness === "number") {
+                material.roughness = Math.max((baseStyle.roughness ?? 0.82) - 0.12, 0);
+            }
+            if (typeof material.metalness === "number") {
+                material.metalness = Math.min((baseStyle.metalness ?? 0) + 0.04, 1);
+            }
+        } else {
+            material.opacity = baseStyle.opacity;
+            if (typeof material.roughness === "number") {
+                material.roughness = baseStyle.roughness;
+            }
+            if (typeof material.metalness === "number") {
+                material.metalness = baseStyle.metalness;
+            }
+        }
+
+        material.needsUpdate = true;
+    }
+}
 
 function initializeLucideIcons() {
     if (!window.lucide || typeof window.lucide.createIcons !== "function") {
@@ -269,6 +318,9 @@ const PRESENTATION_AUTO_ROTATE_SPEED = 0.55;
 const PRESENTATION_CAMERA_TRANSITION_MS = 320;
 const PRESENTATION_RESUME_TARGET_ONLY_MS = 220;
 const PRESENTATION_RESUME_NEAR_DISTANCE_SQ = 2.25;
+const PRESENTATION_SOLUTION_REVEAL_MS = 1800;
+const PRESENTATION_SOLUTION_PHASE_HOLD_MS = 2800;
+const PRESENTATION_SOLUTION_SIMULATION_DELAY_MS = 1200;
 const SNAPSHOT_ROLES = new Set(["problem", "partial", "balanced", "current", "solution", "custom"]);
 
 // Store selected ventilation rule for future calculations.
@@ -448,6 +500,16 @@ function cancelSolutionSequence() {
     presentationSolutionPhase = 0;
 }
 
+function scheduleSolutionSequenceStep(callback, delayMs) {
+    const timerId = setTimeout(() => {
+        presentationSolutionTimers = presentationSolutionTimers.filter((id) => id !== timerId);
+        callback();
+    }, delayMs);
+
+    presentationSolutionTimers.push(timerId);
+    return timerId;
+}
+
 function setPresentationPhaseMessage(title, support) {
     if (presentationStepTitle) {
         presentationStepTitle.textContent = title;
@@ -501,7 +563,7 @@ function startSolutionSequence() {
         "Fresh air must be able to enter the attic properly."
     );
 
-    const timer5a = setTimeout(() => {
+    scheduleSolutionSequenceStep(() => {
         if (!isPresentationMode || !isSolutionSequenceRunning) {
             return;
         }
@@ -513,11 +575,9 @@ function startSolutionSequence() {
         });
         refreshResultsPanel();
         updateVentStatusMessage({ forceReveal: true });
-    }, 600);
+    }, PRESENTATION_SOLUTION_REVEAL_MS);
 
-    presentationSolutionTimers.push(timer5a);
-
-    const timer5b = setTimeout(() => {
+    scheduleSolutionSequenceStep(() => {
         if (!isPresentationMode || !isSolutionSequenceRunning) {
             return;
         }
@@ -527,32 +587,41 @@ function startSolutionSequence() {
             "Exhaust Upgrade",
             "Heat and moisture need a clear path to escape."
         );
-        restoreVentLayout({
-            intake: solutionIntake,
-            static: solutionStatic,
-            ridge: solutionRidge
-        });
-        refreshResultsPanel();
-        updateVentStatusMessage({ forceReveal: true });
-
-        const timer5c = setTimeout(() => {
+        scheduleSolutionSequenceStep(() => {
             if (!isPresentationMode || !isSolutionSequenceRunning) {
                 return;
             }
 
-            presentationSolutionPhase = 3;
-            isSolutionSequenceRunning = false;
-            setPresentationPhaseMessage(
-                "Balanced Roof Ventilation System",
-                "Now air moves through the attic the way the roof system is designed to perform."
-            );
-            restartPresentationSimulation();
-        }, 1100);
+            restoreVentLayout({
+                intake: solutionIntake,
+                static: solutionStatic,
+                ridge: solutionRidge
+            });
+            refreshResultsPanel();
+            updateVentStatusMessage({ forceReveal: true });
 
-        presentationSolutionTimers.push(timer5c);
-    }, 1700);
+            scheduleSolutionSequenceStep(() => {
+                if (!isPresentationMode || !isSolutionSequenceRunning) {
+                    return;
+                }
 
-    presentationSolutionTimers.push(timer5b);
+                presentationSolutionPhase = 3;
+                setPresentationPhaseMessage(
+                    "Balanced Airflow Achieved",
+                    "Now air moves through the attic the way the roof system is designed to perform."
+                );
+
+                scheduleSolutionSequenceStep(() => {
+                    if (!isPresentationMode || !isSolutionSequenceRunning) {
+                        return;
+                    }
+
+                    isSolutionSequenceRunning = false;
+                    restartPresentationSimulation();
+                }, PRESENTATION_SOLUTION_SIMULATION_DELAY_MS);
+            }, PRESENTATION_SOLUTION_PHASE_HOLD_MS);
+        }, PRESENTATION_SOLUTION_REVEAL_MS);
+    }, PRESENTATION_SOLUTION_REVEAL_MS + PRESENTATION_SOLUTION_PHASE_HOLD_MS);
 }
 
 function setPresentationAutoCameraState(enabled, { userOverride = false } = {}) {
@@ -633,6 +702,8 @@ function syncPresentationUiState() {
         controls.enabled = true;
     }
 
+    setPresentationFootprintEmphasis(isPresentationMode);
+
     setPresentationAutoCameraState(isPresentationMode && !hasPresentationCameraOverride, { userOverride: hasPresentationCameraOverride });
 
     updatePresentationStepUi();
@@ -671,7 +742,7 @@ function loadPresentationStep(index) {
         if (currentSlide) {
             restoreViewerSnapshot(currentSlide.snapshot);
         }
-        shouldStartSimulation = false;
+        shouldStartSimulation = true;
     } else if (step.scenario === "solution-sequence") {
         const currentSlide = getSnapshotByRole("current");
         if (currentSlide) {
@@ -719,6 +790,9 @@ function enterPresentationMode() {
 
     isPresentationMode = true;
     presentationStepIndex = 0;
+    presentationGridVisibilityBefore = workspaceUiState.isGridVisible;
+    workspaceUiState.isGridVisible = false;
+    syncGridVisibilityUI();
     closeCompactQuickModes();
     hasPresentationCameraOverride = false;
     presentationCameraTransition = null;
@@ -739,6 +813,12 @@ function exitPresentationMode({ restoreBaseSnapshot = true } = {}) {
     presentationCameraTransition = null;
     cancelSolutionSequence();
     setPresentationAutoCameraState(false);
+
+    if (presentationGridVisibilityBefore !== null) {
+        workspaceUiState.isGridVisible = presentationGridVisibilityBefore;
+        presentationGridVisibilityBefore = null;
+        syncGridVisibilityUI();
+    }
 
     if (restoreBaseSnapshot && snapshotToRestore) {
         restoreViewerSnapshot(snapshotToRestore);
@@ -927,16 +1007,39 @@ function renderRoofFloReport(report) {
         statusNode: reportSolutionStatus
     }, "Solution Status");
 
+    const systemVerdict = report.verdict?.systemVerdict;
+    const recommendedAction = report.verdict?.recommendedAction;
+
+    if (reportVerdictStatus) {
+        const status = systemVerdict?.status === "PASS" ? "PASS" : "FAIL";
+        reportVerdictStatus.textContent = status;
+        reportVerdictStatus.classList.toggle("is-pass", status === "PASS");
+        reportVerdictStatus.classList.toggle("is-fail", status === "FAIL");
+    }
+
     if (reportVerdictSummary) {
-        reportVerdictSummary.textContent = report.verdict?.summary || "";
+        reportVerdictSummary.textContent = systemVerdict?.summary || "Current ventilation is imbalanced and below required airflow targets.";
     }
 
-    if (reportVerdictCurrentStatus) {
-        reportVerdictCurrentStatus.textContent = report.current?.status || "—";
+    if (reportActionHeading) {
+        reportActionHeading.textContent = recommendedAction?.heading || "Recommended System: Balanced";
     }
 
-    if (reportVerdictSolutionStatus) {
-        reportVerdictSolutionStatus.textContent = report.solution?.status || "—";
+    if (reportActionItems) {
+        reportActionItems.innerHTML = "";
+        const items = Array.isArray(recommendedAction?.items) && recommendedAction.items.length > 0
+            ? recommendedAction.items
+            : ["Review attic ventilation and apply balanced intake and exhaust upgrades."];
+
+        for (const line of items) {
+            const item = document.createElement("li");
+            item.textContent = line;
+            reportActionItems.appendChild(item);
+        }
+    }
+
+    if (reportActionClosing) {
+        reportActionClosing.textContent = recommendedAction?.closing || "This brings the system into proper airflow balance.";
     }
 
     if (reportExplanationHeadline) {
@@ -1906,6 +2009,11 @@ function syncWorkspaceUiState() {
         toolbarResultsButton.classList.toggle("is-active", workspaceUiState.isResultsOpen);
         toolbarResultsButton.setAttribute("aria-pressed", workspaceUiState.isResultsOpen ? "true" : "false");
     }
+
+    const compactQuickModeOpen = workspaceUiState.compactQuickMode !== "none";
+    controlPanel.classList.toggle("has-compact-quick-open", compactQuickModeOpen);
+    compactOpenButton?.setAttribute("aria-label", compactQuickModeOpen ? "Close quick toolbar" : "Open tool drawer");
+    compactOpenButton?.setAttribute("title", compactQuickModeOpen ? "Close Quick Toolbar" : "Open Drawer");
 }
 
 function toggleToolPanel() {
@@ -2283,6 +2391,10 @@ function rebuildGeometryFromInputs() {
         getVents: getAirflowVentState
     });
 
+    if (isPresentationMode) {
+        setPresentationFootprintEmphasis(true);
+    }
+
     initializeVentPreview();
 }
 
@@ -2394,8 +2506,17 @@ function handleCompactPresetsIconClick() {
 
 function runCompactPlacementAction(mode) {
     setPlacementMode(mode);
-    closeCompactQuickModes();
     syncWorkspaceUiState();
+}
+
+function onCompactDrawerHandleClicked() {
+    if (workspaceUiState.compactQuickMode !== "none") {
+        closeCompactQuickModes();
+        syncWorkspaceUiState();
+        return;
+    }
+
+    openDrawerToTab(workspaceUiState.activeWorkspaceTab || "setup");
 }
 
 function runCompactPresetAction(generator, source = "preset") {
@@ -2747,7 +2868,7 @@ snapshotPresentButton?.addEventListener("click", () => {
 });
 compactSetupButton?.addEventListener("click", () => openDrawerToTab("setup"));
 compactSnapshotsButton?.addEventListener("click", () => openDrawerToTab("snapshots"));
-compactOpenButton?.addEventListener("click", () => openDrawerToTab(workspaceUiState.activeWorkspaceTab || "setup"));
+compactOpenButton?.addEventListener("click", onCompactDrawerHandleClicked);
 compactPlacementButton?.addEventListener("click", handleCompactPlacementIconClick);
 compactPresetsButton?.addEventListener("click", handleCompactPresetsIconClick);
 quickPlacementIntakeButton?.addEventListener("click", () => runCompactPlacementAction(PlacementMode.INTAKE));

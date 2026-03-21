@@ -312,20 +312,23 @@
           <span id="report-solution-type" class="report-solution-type-badge">balanced</span>
         </header>
 
-        <div id="report-verdict" class="report-verdict">
-          <p class="report-verdict-label">System Verdict</p>
-          <div class="report-verdict-status-lines">
-            <p class="report-verdict-status-line report-verdict-status-line--current">
-              <span class="report-verdict-status-icon" aria-hidden="true">❌</span>
-              <span>Current System: <strong id="report-verdict-current-status">—</strong></span>
-            </p>
-            <p class="report-verdict-status-line report-verdict-status-line--solution">
-              <span class="report-verdict-status-icon" aria-hidden="true">✅</span>
-              <span>Recommended System: <strong id="report-verdict-solution-status">—</strong></span>
-            </p>
-          </div>
-          <p id="report-verdict-summary" class="report-verdict-summary">—</p>
-        </div>
+        <section class="report-decision-grid" aria-label="System decision summary">
+          <article class="report-decision-card report-decision-card--verdict" aria-labelledby="report-verdict-title">
+            <p id="report-verdict-title" class="report-decision-title">System Verdict</p>
+            <p id="report-verdict-status" class="report-verdict-status">PASS</p>
+            <p id="report-verdict-summary" class="report-verdict-summary">Current ventilation is meeting airflow requirements.</p>
+          </article>
+          <article class="report-decision-card report-decision-card--action" aria-labelledby="report-action-title">
+            <p id="report-action-title" class="report-decision-title">Recommended Action</p>
+            <p id="report-action-heading" class="report-action-heading">Optional Upgrade</p>
+            <ul id="report-action-items" class="report-action-items">
+              <li>Replace static vents with ridge vent</li>
+              <li>Improve airflow consistency</li>
+              <li>Optimize ventilation performance</li>
+            </ul>
+            <p id="report-action-closing" class="report-action-closing">This keeps attic airflow reliable across all seasons.</p>
+          </article>
+        </section>
 
         <div class="report-grid">
           <section class="report-card" aria-labelledby="report-current-title">

@@ -86,15 +86,58 @@ function buildReportSection(entry, fallbackLabel) {
 }
 
 function buildVerdict(currentSection, solutionSection) {
-    const currentStatus = currentSection.status;
-    const solutionStatus = solutionSection.status;
-    const solutionBalanced = solutionStatus === "Balanced";
+    const currentBalanced = currentSection.status === "Balanced";
+    const intakeDeficit = Math.max(0, (currentSection.nfva?.requiredIntake ?? 0) - (currentSection.nfva?.installedIntake ?? 0));
+    const exhaustDeficit = Math.max(0, (currentSection.nfva?.requiredExhaust ?? 0) - (currentSection.nfva?.installedExhaust ?? 0));
 
-    const summary = solutionBalanced
-        ? "This upgrade corrects the airflow imbalance and brings the attic into proper balance."
-        : "This upgrade improves airflow alignment and addresses the current ventilation shortfall.";
+    const systemVerdict = {
+        title: "System Verdict",
+        status: currentBalanced ? "PASS" : "FAIL",
+        summary: currentBalanced
+            ? "Current ventilation is meeting airflow requirements."
+            : "Current ventilation is imbalanced and below required airflow targets."
+    };
 
-    return { title: "System Verdict", currentStatus, solutionStatus, summary };
+    let recommendedAction;
+
+    if (!currentBalanced) {
+        const items = [];
+
+        if (intakeDeficit > 0) {
+            items.push(`+ Increase intake ventilation by ${intakeDeficit.toFixed(1)} in²`);
+        } else {
+            items.push("Intake / soffit ventilation: No change (meets requirements)");
+        }
+
+        if (exhaustDeficit > 0) {
+            items.push(`+ Increase exhaust ventilation by ${exhaustDeficit.toFixed(1)} in²`);
+        } else {
+            items.push("Exhaust ventilation: No change (meets requirements)");
+        }
+
+        recommendedAction = {
+            title: "Recommended Action",
+            heading: "Recommended System: Balanced",
+            items,
+            closing: "This brings the system into proper airflow balance."
+        };
+    } else {
+        recommendedAction = {
+            title: "Recommended Action",
+            heading: "Optional Upgrade",
+            items: [
+                "Replace static vents with ridge vent",
+                "Improve airflow consistency",
+                "Optimize ventilation performance"
+            ],
+            closing: "This keeps attic airflow reliable across all seasons."
+        };
+    }
+
+    return {
+        systemVerdict,
+        recommendedAction
+    };
 }
 
 function buildExplanation(currentSection, solutionSection) {
