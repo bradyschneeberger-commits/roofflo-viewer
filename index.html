@@ -312,6 +312,21 @@
           <span id="report-solution-type" class="report-solution-type-badge">balanced</span>
         </header>
 
+        <div id="report-verdict" class="report-verdict">
+          <p class="report-verdict-label">System Verdict</p>
+          <div class="report-verdict-status-lines">
+            <p class="report-verdict-status-line report-verdict-status-line--current">
+              <span class="report-verdict-status-icon" aria-hidden="true">❌</span>
+              <span>Current System: <strong id="report-verdict-current-status">—</strong></span>
+            </p>
+            <p class="report-verdict-status-line report-verdict-status-line--solution">
+              <span class="report-verdict-status-icon" aria-hidden="true">✅</span>
+              <span>Recommended System: <strong id="report-verdict-solution-status">—</strong></span>
+            </p>
+          </div>
+          <p id="report-verdict-summary" class="report-verdict-summary">—</p>
+        </div>
+
         <div class="report-grid">
           <section class="report-card" aria-labelledby="report-current-title">
             <div class="report-card-header">
@@ -321,30 +336,35 @@
             <div class="report-metrics">
               <div class="report-row"><span>Intake Count</span><strong id="report-current-intake-count">0</strong></div>
               <div class="report-row"><span>Static Vent Count</span><strong id="report-current-static-count">0</strong></div>
-              <div class="report-row"><span>Ridge Vent Linear Feet</span><strong id="report-current-ridge-linear-feet">0.0 ft</strong></div>
+              <div class="report-row"><span>Ridge Vent Linear Feet</span><span class="report-value-stack"><strong id="report-current-ridge-linear-feet">0.0 ft</strong><span id="report-current-ridge-helper" class="report-row-helper" hidden></span></span></div>
               <div class="report-row"><span>Required Ventilation</span><strong id="report-current-required-total">0.0 in² NFVA</strong></div>
               <div class="report-row"><span>Required Intake</span><strong id="report-current-required-intake">0.0 in² NFVA</strong></div>
               <div class="report-row"><span>Required Exhaust</span><strong id="report-current-required-exhaust">0.0 in² NFVA</strong></div>
               <div class="report-row"><span>Installed Intake</span><strong id="report-current-installed-intake">0.0 in² NFVA</strong></div>
               <div class="report-row"><span>Installed Exhaust</span><strong id="report-current-installed-exhaust">0.0 in² NFVA</strong></div>
+              <div class="report-row report-row-diff"><span>Intake Coverage</span><strong id="report-current-intake-diff">—</strong></div>
+              <div class="report-row report-row-diff"><span>Exhaust Coverage</span><strong id="report-current-exhaust-diff">—</strong></div>
               <div class="report-row report-row-status"><span>Current Status</span><strong id="report-current-status">Under-ventilated</strong></div>
             </div>
           </section>
 
-          <section class="report-card" aria-labelledby="report-solution-title">
+          <section class="report-card report-card--solution" aria-labelledby="report-solution-title">
             <div class="report-card-header">
               <h3 id="report-solution-title">Recommended Solution</h3>
               <p id="report-solution-label" class="report-card-subtitle">Recommended Solution</p>
             </div>
+            <p class="report-solution-recommendation">✔ This is the system we recommend installing</p>
             <div class="report-metrics">
               <div class="report-row"><span>Intake Count</span><strong id="report-solution-intake-count">0</strong></div>
               <div class="report-row"><span>Static Vent Count</span><strong id="report-solution-static-count">0</strong></div>
-              <div class="report-row"><span>Ridge Vent Linear Feet</span><strong id="report-solution-ridge-linear-feet">0.0 ft</strong></div>
+              <div class="report-row"><span>Ridge Vent Linear Feet</span><span class="report-value-stack"><strong id="report-solution-ridge-linear-feet">0.0 ft</strong><span id="report-solution-ridge-helper" class="report-row-helper" hidden></span></span></div>
               <div class="report-row"><span>Required Ventilation</span><strong id="report-solution-required-total">0.0 in² NFVA</strong></div>
               <div class="report-row"><span>Required Intake</span><strong id="report-solution-required-intake">0.0 in² NFVA</strong></div>
               <div class="report-row"><span>Required Exhaust</span><strong id="report-solution-required-exhaust">0.0 in² NFVA</strong></div>
               <div class="report-row"><span>Installed Intake</span><strong id="report-solution-installed-intake">0.0 in² NFVA</strong></div>
               <div class="report-row"><span>Installed Exhaust</span><strong id="report-solution-installed-exhaust">0.0 in² NFVA</strong></div>
+              <div class="report-row report-row-diff"><span>Intake Coverage</span><strong id="report-solution-intake-diff">—</strong></div>
+              <div class="report-row report-row-diff"><span>Exhaust Coverage</span><strong id="report-solution-exhaust-diff">—</strong></div>
               <div class="report-row report-row-status"><span>Solution Status</span><strong id="report-solution-status">Balanced</strong></div>
             </div>
           </section>
@@ -352,7 +372,7 @@
 
         <section class="report-card report-explanation" aria-labelledby="report-explanation-title">
           <div class="report-card-header">
-            <h3 id="report-explanation-title">Explanation</h3>
+            <h3 id="report-explanation-title">Recommended Upgrade</h3>
           </div>
           <p id="report-explanation-headline" class="report-explanation-headline">Current system shows ventilation gaps that the proposal addresses.</p>
           <p id="report-explanation-summary" class="report-explanation-summary">The roof is currently under-ventilated or imbalanced. The recommended solution improves intake and exhaust alignment to support healthier attic airflow.</p>
@@ -361,11 +381,15 @@
             <li>The recommended vent mix increases intake and exhaust performance toward a balanced system.</li>
             <li>Balanced attic airflow helps move heat and moisture out more effectively.</li>
           </ul>
+          <p id="report-explanation-closing" class="report-explanation-closing">—</p>
         </section>
 
         <footer class="report-actions">
-          <button id="btn-report-back-viewer" type="button" class="report-btn report-btn-secondary">Back to Viewer</button>
-          <button id="btn-report-close" type="button" class="report-btn report-btn-primary">Close Report</button>
+          <p class="report-next-steps-heading">Next Steps</p>
+          <div class="report-actions-buttons">
+            <button id="btn-report-back-viewer" type="button" class="report-btn report-btn-secondary">Back to Viewer</button>
+            <button id="btn-report-close" type="button" class="report-btn report-btn-primary">Close Report</button>
+          </div>
         </footer>
       </div>
     </section>

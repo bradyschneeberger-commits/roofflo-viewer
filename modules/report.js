@@ -77,36 +77,64 @@ function buildReportSection(entry, fallbackLabel) {
             requiredIntake,
             requiredExhaust,
             installedIntake: installed.installedIntakeIn2,
-            installedExhaust: installed.installedExhaustIn2
+            installedExhaust: installed.installedExhaustIn2,
+            intakeDiff: installed.installedIntakeIn2 - requiredIntake,
+            exhaustDiff: installed.installedExhaustIn2 - requiredExhaust
         },
         status
     };
 }
 
+function buildVerdict(currentSection, solutionSection) {
+    const currentStatus = currentSection.status;
+    const solutionStatus = solutionSection.status;
+    const solutionBalanced = solutionStatus === "Balanced";
+
+    const summary = solutionBalanced
+        ? "This upgrade corrects the airflow imbalance and brings the attic into proper balance."
+        : "This upgrade improves airflow alignment and addresses the current ventilation shortfall.";
+
+    return { title: "System Verdict", currentStatus, solutionStatus, summary };
+}
+
 function buildExplanation(currentSection, solutionSection) {
-    const currentBalanced = currentSection.status === "Balanced";
+    const currentStatus = currentSection.status;
     const solutionBalanced = solutionSection.status === "Balanced";
+    const currentBalanced = currentStatus === "Balanced";
+    const intakeDeficient = currentStatus === "Intake Deficient";
+    const exhaustDeficient = currentStatus === "Exhaust Deficient";
 
-    const currentDescriptor = currentBalanced
-        ? "currently near balanced ventilation"
-        : "currently under-ventilated or imbalanced";
+    let headline, summary;
 
-    const solutionDescriptor = solutionBalanced
-        ? "moves the system toward balanced airflow"
-        : "improves intake and exhaust alignment";
+    if (currentBalanced) {
+        headline = "Your current system is near balanced — the upgrade makes it perform reliably";
+        summary = "Your roof is reasonably ventilated right now, but small imbalances lead to premature wear. The recommended layout locks in consistent airflow year-round.";
+    } else if (intakeDeficient) {
+        headline = "Not enough fresh air is entering the attic";
+        summary = "Without sufficient intake, your attic can't pull fresh air in. Heat and moisture get trapped, shortening shingle life and driving up cooling costs. The recommended system fixes the intake shortfall directly.";
+    } else if (exhaustDeficient) {
+        headline = "Hot air and moisture have nowhere to escape";
+        summary = "Your attic is taking in air but has no clear path to exhaust it. Trapped heat and moisture stress the roof deck and shingles from the inside. The recommended system adds the exhaust capacity to complete the circuit.";
+    } else {
+        headline = "Your attic ventilation is significantly undersized";
+        summary = "Both intake and exhaust are below the minimum for this roof. Heat and moisture build up with nowhere to go — accelerating wear and risking roof warranty violations. The recommended system addresses both sides of the problem.";
+    }
+
+    const closingBullet = solutionBalanced
+        ? "The recommended layout satisfies both intake and exhaust requirements, producing a fully balanced system."
+        : "The recommended improvements bring the system closer to the required balanced airflow targets.";
 
     return {
-        headline: currentBalanced
-            ? "Current system is close, and the proposed layout improves consistency"
-            : "Current system shows ventilation gaps that the proposal addresses",
-        summary: `The roof is ${currentDescriptor}. The recommended solution ${solutionDescriptor} to support healthier attic airflow.`,
+        headline,
+        summary,
         bullets: [
+            "Attic ventilation works by drawing cooler air in through intake vents and pushing hot, moist air out through exhaust vents — both sides must be sized correctly.",
             currentBalanced
-                ? "Current intake and exhaust are closer to target, but airflow can still be improved."
-                : "Current intake and exhaust do not meet the ideal balance, which can limit airflow through the attic.",
-            "The recommended vent mix increases intake and exhaust performance toward a balanced system.",
-            "Balanced attic airflow helps move heat and moisture out more effectively."
-        ]
+                ? "Your current counts are close to target, but can be optimized for full-season reliability."
+                : "Your current vent count does not meet the minimum free area required for your attic's square footage.",
+            closingBullet
+        ],
+        closing: "This helps reduce heat buildup and moisture issues over time."
     };
 }
 
@@ -124,6 +152,7 @@ function createRoofFloReport({
         solutionType: typeof solutionType === "string" && solutionType.trim() ? solutionType.trim() : "balanced",
         current,
         solution,
+        verdict: buildVerdict(current, solution),
         explanation: buildExplanation(current, solution)
     };
 }

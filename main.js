@@ -141,7 +141,18 @@ const reportSolutionStatus = document.getElementById("report-solution-status");
 const reportExplanationHeadline = document.getElementById("report-explanation-headline");
 const reportExplanationSummary = document.getElementById("report-explanation-summary");
 const reportExplanationBullets = document.getElementById("report-explanation-bullets");
+const reportVerdictSummary = document.getElementById("report-verdict-summary");
+const reportVerdictFollowup = document.getElementById("report-verdict-followup");
+const reportCurrentIntakeDiff = document.getElementById("report-current-intake-diff");
+const reportCurrentExhaustDiff = document.getElementById("report-current-exhaust-diff");
+const reportSolutionIntakeDiff = document.getElementById("report-solution-intake-diff");
+const reportSolutionExhaustDiff = document.getElementById("report-solution-exhaust-diff");
 const reportBackViewerButton = document.getElementById("btn-report-back-viewer");
+const reportExplanationClosing = document.getElementById("report-explanation-closing");
+const reportCurrentRidgeHelper = document.getElementById("report-current-ridge-helper");
+const reportSolutionRidgeHelper = document.getElementById("report-solution-ridge-helper");
+const reportVerdictCurrentStatus = document.getElementById("report-verdict-current-status");
+const reportVerdictSolutionStatus = document.getElementById("report-verdict-solution-status");
 const reportCloseButton = document.getElementById("btn-report-close");
 
 const placementButtons = [
@@ -788,11 +799,14 @@ function applyReportSectionToUi(section, uiNodes, statusLabel) {
         intakeNode,
         staticNode,
         ridgeNode,
+        ridgeHelperNode,
         requiredTotalNode,
         requiredIntakeNode,
         requiredExhaustNode,
         installedIntakeNode,
         installedExhaustNode,
+        intakeDiffNode,
+        exhaustDiffNode,
         statusNode
     } = uiNodes;
 
@@ -811,6 +825,16 @@ function applyReportSectionToUi(section, uiNodes, statusLabel) {
     if (ridgeNode) {
         const ridgeFeet = Number(section.counts?.ridgeLinearFeet ?? 0);
         ridgeNode.textContent = `${ridgeFeet.toFixed(1)} ft`;
+    }
+
+    if (ridgeHelperNode) {
+        const ridgeFeet = Number(section.counts?.ridgeLinearFeet ?? 0);
+        if (ridgeFeet > 0.5) {
+            ridgeHelperNode.textContent = "Continuous ridge coverage";
+            ridgeHelperNode.hidden = false;
+        } else {
+            ridgeHelperNode.hidden = true;
+        }
     }
 
     if (requiredTotalNode) {
@@ -832,6 +856,25 @@ function applyReportSectionToUi(section, uiNodes, statusLabel) {
     if (installedExhaustNode) {
         installedExhaustNode.textContent = formatVentilationValue(section.nfva?.installedExhaust ?? 0);
     }
+
+    function applyDiffNode(node, diffValue) {
+        if (!node) {
+            return;
+        }
+        const num = Number(diffValue);
+        const NEAR_ZERO = 5;
+        const isNeutral = Math.abs(num) < NEAR_ZERO;
+        const isPositive = !isNeutral && num > 0;
+        const isNegative = !isNeutral && num < 0;
+        const sign = num > 0 ? "+" : "";
+        node.textContent = `${sign}${formatVentilationValue(Math.abs(num))}`;
+        node.classList.toggle("delta-positive", isPositive);
+        node.classList.toggle("delta-negative", isNegative);
+        node.classList.toggle("delta-neutral", isNeutral);
+    }
+
+    applyDiffNode(intakeDiffNode, section.nfva?.intakeDiff ?? 0);
+    applyDiffNode(exhaustDiffNode, section.nfva?.exhaustDiff ?? 0);
 
     if (statusNode) {
         statusNode.textContent = section.status || statusLabel;
@@ -857,11 +900,14 @@ function renderRoofFloReport(report) {
         intakeNode: reportCurrentIntakeCount,
         staticNode: reportCurrentStaticCount,
         ridgeNode: reportCurrentRidgeLinearFeet,
+        ridgeHelperNode: reportCurrentRidgeHelper,
         requiredTotalNode: reportCurrentRequiredTotal,
         requiredIntakeNode: reportCurrentRequiredIntake,
         requiredExhaustNode: reportCurrentRequiredExhaust,
         installedIntakeNode: reportCurrentInstalledIntake,
         installedExhaustNode: reportCurrentInstalledExhaust,
+        intakeDiffNode: reportCurrentIntakeDiff,
+        exhaustDiffNode: reportCurrentExhaustDiff,
         statusNode: reportCurrentStatus
     }, "Current Status");
 
@@ -870,13 +916,28 @@ function renderRoofFloReport(report) {
         intakeNode: reportSolutionIntakeCount,
         staticNode: reportSolutionStaticCount,
         ridgeNode: reportSolutionRidgeLinearFeet,
+        ridgeHelperNode: reportSolutionRidgeHelper,
         requiredTotalNode: reportSolutionRequiredTotal,
         requiredIntakeNode: reportSolutionRequiredIntake,
         requiredExhaustNode: reportSolutionRequiredExhaust,
         installedIntakeNode: reportSolutionInstalledIntake,
         installedExhaustNode: reportSolutionInstalledExhaust,
+        intakeDiffNode: reportSolutionIntakeDiff,
+        exhaustDiffNode: reportSolutionExhaustDiff,
         statusNode: reportSolutionStatus
     }, "Solution Status");
+
+    if (reportVerdictSummary) {
+        reportVerdictSummary.textContent = report.verdict?.summary || "";
+    }
+
+    if (reportVerdictCurrentStatus) {
+        reportVerdictCurrentStatus.textContent = report.current?.status || "—";
+    }
+
+    if (reportVerdictSolutionStatus) {
+        reportVerdictSolutionStatus.textContent = report.solution?.status || "—";
+    }
 
     if (reportExplanationHeadline) {
         reportExplanationHeadline.textContent = report.explanation?.headline || "Recommended ventilation layout";
@@ -895,6 +956,10 @@ function renderRoofFloReport(report) {
             item.textContent = bullet;
             reportExplanationBullets.appendChild(item);
         }
+    }
+
+    if (reportExplanationClosing) {
+        reportExplanationClosing.textContent = report.explanation?.closing || "This helps reduce heat buildup and moisture issues over time.";
     }
 }
 
