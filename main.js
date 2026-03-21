@@ -57,6 +57,7 @@ const houseWidthInput = document.getElementById("house-width");
 const houseLengthInput = document.getElementById("house-length");
 const roofPitchRiseInput = document.getElementById("roof-pitch-rise");
 const overhangDepthInput = document.getElementById("overhang-depth");
+const roofTypeSelect = document.getElementById("roof-type-select");
 const ventRuleSelect = document.getElementById("vent-rule");
 const intakeVentButton = document.getElementById("btn-intake-vent");
 const staticVentButton = document.getElementById("btn-static-vent");
@@ -76,6 +77,12 @@ const resultInstalledExhaust = document.getElementById("result-installed-exhaust
 const resultIntakeDiff = document.getElementById("result-intake-diff");
 const resultExhaustDiff = document.getElementById("result-exhaust-diff");
 const resultStatus = document.getElementById("result-status");
+const setupOverviewRoofIcon = document.getElementById("setup-overview-roof-icon");
+const setupOverviewRoofLabel = document.getElementById("setup-overview-roof-label");
+const setupOverviewAtticArea = document.getElementById("setup-overview-attic-area");
+const setupOverviewRequiredTotal = document.getElementById("setup-overview-required-total");
+const setupOverviewRequiredIntake = document.getElementById("setup-overview-required-intake");
+const setupOverviewRequiredExhaust = document.getElementById("setup-overview-required-exhaust");
 const ventStatusToast = document.getElementById("vent-status-toast");
 const ventStatusMessage = document.getElementById("vent-status-message");
 const statusIndicatorButton = document.getElementById("btn-toolbar-status");
@@ -195,6 +202,25 @@ let isSolutionSequenceRunning = false;
 let presentationSolutionTimers = [];
 let activeReport = null;
 let presentationGridVisibilityBefore = null;
+let selectedRoofType = roofTypeSelect?.value || "gable";
+let hasInitializedViewerGeometry = false;
+let hasExplicitRoofTypeSelection = false;
+let pendingViewerEntryAfterSelection = null;
+
+const roofOverlayParticleState = {
+    layer: null,
+    canvas: null,
+    ctx: null,
+    particles: [],
+    rafId: 0,
+    width: 0,
+    height: 0,
+    dpr: 1,
+    isRunning: false,
+    lastFrameTime: 0,
+    panelRect: null,
+    panelRectUpdatedAt: 0
+};
 
 function setPresentationFootprintEmphasis(enabled) {
     const geometryState = getGeometryState();
@@ -2355,6 +2381,44 @@ function refreshResultsPanel() {
         resultStatus.classList.toggle("is-balanced", isBalanced);
         resultStatus.classList.toggle("is-warning", !isBalanced);
     }
+
+    syncSetupOverview({
+        roofType: selectedRoofType,
+        atticAreaSqFt,
+        requiredVentIn2,
+        requiredIntakeIn2,
+        requiredExhaustIn2
+    });
+}
+
+function syncSetupOverview({ roofType, atticAreaSqFt, requiredVentIn2, requiredIntakeIn2, requiredExhaustIn2 } = {}) {
+    const resolvedRoofType = roofType || selectedRoofType || "gable";
+
+    if (setupOverviewRoofIcon) {
+        setupOverviewRoofIcon.classList.remove("is-gable", "is-hip", "is-shed");
+        setupOverviewRoofIcon.classList.add(`is-${resolvedRoofType}`);
+    }
+
+    if (setupOverviewRoofLabel) {
+        const label = resolvedRoofType.charAt(0).toUpperCase() + resolvedRoofType.slice(1);
+        setupOverviewRoofLabel.textContent = `${label} Roof`;
+    }
+
+    if (setupOverviewAtticArea && Number.isFinite(atticAreaSqFt)) {
+        setupOverviewAtticArea.textContent = formatSqFt(atticAreaSqFt);
+    }
+
+    if (setupOverviewRequiredTotal && Number.isFinite(requiredVentIn2)) {
+        setupOverviewRequiredTotal.textContent = formatVentilationValue(requiredVentIn2);
+    }
+
+    if (setupOverviewRequiredIntake && Number.isFinite(requiredIntakeIn2)) {
+        setupOverviewRequiredIntake.textContent = formatVentilationValue(requiredIntakeIn2);
+    }
+
+    if (setupOverviewRequiredExhaust && Number.isFinite(requiredExhaustIn2)) {
+        setupOverviewRequiredExhaust.textContent = formatVentilationValue(requiredExhaustIn2);
+    }
 }
 
 function rebuildGeometryFromInputs() {
@@ -2377,12 +2441,14 @@ function rebuildGeometryFromInputs() {
     const pitchRise = Math.max(1, toNumber(roofPitchRiseInput?.value, 6));
     const overhangDepthInches = Math.max(0, toNumber(overhangDepthInput?.value, 16));
     const overhangDepth = overhangDepthInches / 12;
+    const roofType = selectedRoofType || "gable";
 
     createAtticGeometry({
         buildingWidth,
         buildingLength,
         pitchRise,
-        overhangDepth
+        overhangDepth,
+        roofType
     });
 
     initializeAirflowVisualization({
@@ -2396,6 +2462,7 @@ function rebuildGeometryFromInputs() {
     }
 
     initializeVentPreview();
+    hasInitializedViewerGeometry = true;
 }
 
 function onGeometryInputChanged() {
@@ -2830,7 +2897,8 @@ function onRestoreCurrentLayoutClicked() {
 
 // Build default geometry on load.
 initializeLucideIcons();
-rebuildGeometryFromInputs();
+syncRoofTypeSelectUI();
+syncSetupOverview({ roofType: selectedRoofType });
 refreshResultsPanel();
 updateVentStatusMessage({ forceReveal: true });
 
@@ -3000,6 +3068,9 @@ const setupImportBannerSub = document.getElementById("setup-import-banner-sub");
 const setupImportEntryHint = document.getElementById("setup-import-entry-hint");
 const btnCalcOpenViewer = document.getElementById("btn-calc-open-viewer");
 const btnSetupUseGeometry = document.getElementById("btn-setup-use-geometry");
+const roofSelectionOverlay = document.getElementById("roof-selection-overlay");
+const roofSelectionDialog = document.querySelector(".roof-selection-dialog");
+const roofSelectionCards = Array.from(document.querySelectorAll(".roof-selection-card"));
 
 const launchParticleState = {
     ctx: null,
@@ -3320,11 +3391,243 @@ function initializeLaunchParticles() {
     document.addEventListener("visibilitychange", () => {
         if (document.hidden) {
             stopLaunchParticleAnimation();
+            stopRoofOverlayParticles();
             return;
         }
 
         syncLaunchParticleAnimation(launchScreen?.classList.contains("is-hidden") ? "viewer" : "launch");
+
+        if (!roofSelectionOverlay?.hidden && roofSelectionOverlay?.classList.contains("is-visible")) {
+            startRoofOverlayParticles();
+        }
     });
+}
+
+function ensureRoofOverlayParticleLayer() {
+    if (!workspace || roofOverlayParticleState.layer) {
+        return;
+    }
+
+    const layer = document.createElement("div");
+    layer.id = "roof-selection-particle-layer";
+    layer.hidden = true;
+
+    const canvas = document.createElement("canvas");
+    canvas.id = "roof-selection-particle-canvas";
+    layer.appendChild(canvas);
+
+    workspace.appendChild(layer);
+
+    roofOverlayParticleState.layer = layer;
+    roofOverlayParticleState.canvas = canvas;
+    roofOverlayParticleState.ctx = canvas.getContext("2d", { alpha: true });
+}
+
+function updateRoofOverlayPanelRect() {
+    if (!roofSelectionDialog || !roofOverlayParticleState.layer) {
+        roofOverlayParticleState.panelRect = null;
+        return;
+    }
+
+    const dialogRect = roofSelectionDialog.getBoundingClientRect();
+    const layerRect = roofOverlayParticleState.layer.getBoundingClientRect();
+    roofOverlayParticleState.panelRect = {
+        left: dialogRect.left - layerRect.left,
+        top: dialogRect.top - layerRect.top,
+        right: dialogRect.right - layerRect.left,
+        bottom: dialogRect.bottom - layerRect.top
+    };
+    roofOverlayParticleState.panelRectUpdatedAt = performance.now();
+}
+
+function randomRoofOverlayParticlePosition() {
+    return {
+        x: Math.random() * roofOverlayParticleState.width,
+        y: Math.random() * roofOverlayParticleState.height
+    };
+}
+
+function createRoofOverlayParticle(layer = "mid") {
+    const layerConfig = getLaunchParticleLayerConfig(layer);
+    const position = randomRoofOverlayParticlePosition();
+    const speed = layerConfig.speedMin + (Math.random() * layerConfig.speedRange);
+    const driftAngle = layerConfig.driftMin + (Math.random() * layerConfig.driftRange);
+    const color = randomLaunchParticleColor();
+
+    return {
+        x: position.x,
+        y: position.y,
+        layer,
+        radius: layerConfig.radiusMin + (Math.random() * layerConfig.radiusRange),
+        vx: speed,
+        vy: speed * driftAngle,
+        alpha: (layerConfig.alphaMin + (Math.random() * layerConfig.alphaRange)) * color.alphaScale,
+        color: color.rgb,
+        swayAmplitude: layerConfig.swayAmpMin + (Math.random() * layerConfig.swayAmpRange),
+        swayFrequency: layerConfig.swayFreqMin + (Math.random() * layerConfig.swayFreqRange),
+        swayPhase: Math.random() * Math.PI * 2
+    };
+}
+
+function rebuildRoofOverlayParticles() {
+    if (!roofOverlayParticleState.canvas || !roofOverlayParticleState.width || !roofOverlayParticleState.height) {
+        return;
+    }
+
+    const viewportArea = roofOverlayParticleState.width * roofOverlayParticleState.height;
+    const baseCount = Math.min(120, Math.max(58, Math.round(viewportArea / 28000)));
+    const farCount = Math.round(baseCount * 0.32);
+    const midCount = Math.round(baseCount * 1.42);
+    const nearCount = Math.round(baseCount * 0.24);
+
+    const particles = [];
+
+    for (let i = 0; i < farCount; i += 1) {
+        particles.push(createRoofOverlayParticle("far"));
+    }
+
+    for (let i = 0; i < midCount; i += 1) {
+        particles.push(createRoofOverlayParticle("mid"));
+    }
+
+    for (let i = 0; i < nearCount; i += 1) {
+        particles.push(createRoofOverlayParticle("near"));
+    }
+
+    roofOverlayParticleState.particles = particles;
+}
+
+function resizeRoofOverlayParticles() {
+    if (!roofOverlayParticleState.canvas || !roofOverlayParticleState.layer) {
+        return;
+    }
+
+    const rect = roofOverlayParticleState.layer.getBoundingClientRect();
+    const width = Math.max(1, Math.floor(rect.width));
+    const height = Math.max(1, Math.floor(rect.height));
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+
+    roofOverlayParticleState.width = width;
+    roofOverlayParticleState.height = height;
+    roofOverlayParticleState.dpr = dpr;
+
+    roofOverlayParticleState.canvas.width = Math.floor(width * dpr);
+    roofOverlayParticleState.canvas.height = Math.floor(height * dpr);
+
+    if (roofOverlayParticleState.ctx) {
+        roofOverlayParticleState.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+
+    updateRoofOverlayPanelRect();
+    rebuildRoofOverlayParticles();
+}
+
+function getRoofOverlayPanelAlphaMultiplier(particle) {
+    const panelRect = roofOverlayParticleState.panelRect;
+
+    if (!panelRect) {
+        return 1;
+    }
+
+    const inPanel = particle.x >= panelRect.left
+        && particle.x <= panelRect.right
+        && particle.y >= panelRect.top
+        && particle.y <= panelRect.bottom;
+
+    if (!inPanel) {
+        return 1;
+    }
+
+    if (particle.layer === "far") {
+        return 0.56;
+    }
+
+    if (particle.layer === "near") {
+        return 0.45;
+    }
+
+    return 0.5;
+}
+
+function renderRoofOverlayParticles(timestamp) {
+    if (!roofOverlayParticleState.isRunning || !roofOverlayParticleState.ctx || !roofOverlayParticleState.canvas) {
+        return;
+    }
+
+    const ctx = roofOverlayParticleState.ctx;
+    const dtMs = roofOverlayParticleState.lastFrameTime ? Math.min(48, timestamp - roofOverlayParticleState.lastFrameTime) : 16;
+    const drift = dtMs / 16.666;
+    roofOverlayParticleState.lastFrameTime = timestamp;
+
+    if (!roofOverlayParticleState.panelRect || (timestamp - roofOverlayParticleState.panelRectUpdatedAt) > 680) {
+        updateRoofOverlayPanelRect();
+    }
+
+    ctx.clearRect(0, 0, roofOverlayParticleState.width, roofOverlayParticleState.height);
+
+    for (const particle of roofOverlayParticleState.particles) {
+        const swayDelta = Math.sin((timestamp * particle.swayFrequency) + particle.swayPhase) * particle.swayAmplitude;
+        particle.x += particle.vx * drift;
+        particle.y += (particle.vy + swayDelta) * drift;
+
+        if (particle.x > roofOverlayParticleState.width + 8) {
+            const nextPosition = randomRoofOverlayParticlePosition();
+            particle.x = -8;
+            particle.y = nextPosition.y;
+        }
+
+        if (particle.y < -10 || particle.y > roofOverlayParticleState.height + 10) {
+            particle.y = Math.random() * roofOverlayParticleState.height;
+        }
+
+        const panelAlpha = getRoofOverlayPanelAlphaMultiplier(particle);
+        const effectiveAlpha = Math.min(0.5, particle.alpha * 1.16 * panelAlpha);
+
+        ctx.beginPath();
+        ctx.fillStyle = `rgba(${particle.color}, ${effectiveAlpha})`;
+        ctx.arc(particle.x, particle.y, particle.radius, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    roofOverlayParticleState.rafId = window.requestAnimationFrame(renderRoofOverlayParticles);
+}
+
+function stopRoofOverlayParticles() {
+    roofOverlayParticleState.isRunning = false;
+    roofOverlayParticleState.lastFrameTime = 0;
+
+    if (roofOverlayParticleState.rafId) {
+        window.cancelAnimationFrame(roofOverlayParticleState.rafId);
+        roofOverlayParticleState.rafId = 0;
+    }
+
+    if (roofOverlayParticleState.layer) {
+        roofOverlayParticleState.layer.classList.remove("is-visible");
+        roofOverlayParticleState.layer.hidden = true;
+    }
+}
+
+function startRoofOverlayParticles() {
+    ensureRoofOverlayParticleLayer();
+
+    if (!roofOverlayParticleState.ctx || !roofOverlayParticleState.layer || launchParticleState.reducedMotion) {
+        return;
+    }
+
+    roofOverlayParticleState.layer.hidden = false;
+    requestAnimationFrame(() => {
+        roofOverlayParticleState.layer?.classList.add("is-visible");
+    });
+
+    resizeRoofOverlayParticles();
+
+    if (roofOverlayParticleState.isRunning) {
+        return;
+    }
+
+    roofOverlayParticleState.isRunning = true;
+    roofOverlayParticleState.lastFrameTime = 0;
+    roofOverlayParticleState.rafId = window.requestAnimationFrame(renderRoofOverlayParticles);
 }
 
 function focusViewerSetupInput() {
@@ -3335,6 +3638,111 @@ function focusViewerSetupInput() {
     requestAnimationFrame(() => {
         houseWidthInput.focus({ preventScroll: true });
     });
+}
+
+function syncRoofTypeSelectUI() {
+    if (!roofTypeSelect) {
+        return;
+    }
+
+    roofTypeSelect.value = selectedRoofType;
+    syncSetupOverview({ roofType: selectedRoofType });
+}
+
+function runPendingViewerEntryAfterSelection() {
+    if (typeof pendingViewerEntryAfterSelection === "function") {
+        pendingViewerEntryAfterSelection();
+    }
+
+    pendingViewerEntryAfterSelection = null;
+}
+
+function shouldShowRoofSelectionOnEntry() {
+    return !hasExplicitRoofTypeSelection;
+}
+
+function finalizeViewerEntryAfterRoofSelection() {
+    ensureViewerGeometryInitialized();
+    workspace?.classList.remove("is-mode-entering");
+    void workspace?.offsetWidth;
+    workspace?.classList.add("is-mode-entering");
+    openDrawerToTab("setup");
+    refreshResultsPanel();
+    syncImportedGeometryGateState();
+    updateVentStatusMessage({ forceReveal: true });
+    runPendingViewerEntryAfterSelection();
+}
+
+function beginVisualizerEntryFlow({ afterSelection = null } = {}) {
+    pendingViewerEntryAfterSelection = afterSelection;
+    setAppMode("viewer");
+
+    if (shouldShowRoofSelectionOnEntry()) {
+        showRoofSelectionOverlay();
+        return;
+    }
+
+    hideRoofSelectionOverlay({ immediate: true });
+    finalizeViewerEntryAfterRoofSelection();
+}
+
+function ensureViewerGeometryInitialized() {
+    if (hasInitializedViewerGeometry) {
+        return;
+    }
+
+    rebuildGeometryFromInputs();
+}
+
+function showRoofSelectionOverlay() {
+    if (!roofSelectionOverlay) {
+        ensureViewerGeometryInitialized();
+        return;
+    }
+
+    roofSelectionOverlay.hidden = false;
+    roofSelectionOverlay.classList.remove("is-closing");
+    startRoofOverlayParticles();
+    requestAnimationFrame(() => {
+        roofSelectionOverlay.classList.add("is-visible");
+    });
+}
+
+function hideRoofSelectionOverlay({ immediate = false } = {}) {
+    if (!roofSelectionOverlay || roofSelectionOverlay.hidden) {
+        return;
+    }
+
+    if (immediate) {
+        roofSelectionOverlay.classList.remove("is-visible", "is-closing");
+        roofSelectionOverlay.hidden = true;
+        stopRoofOverlayParticles();
+        return;
+    }
+
+    roofSelectionOverlay.classList.remove("is-visible");
+    roofSelectionOverlay.classList.add("is-closing");
+
+    window.setTimeout(() => {
+        if (!roofSelectionOverlay) {
+            return;
+        }
+
+        roofSelectionOverlay.hidden = true;
+        roofSelectionOverlay.classList.remove("is-closing");
+        stopRoofOverlayParticles();
+    }, 200);
+}
+
+function onRoofTypeSelected(roofType) {
+    selectedRoofType = roofType;
+    hasExplicitRoofTypeSelection = true;
+    syncRoofTypeSelectUI();
+    hideRoofSelectionOverlay();
+
+    window.setTimeout(() => {
+        finalizeViewerEntryAfterRoofSelection();
+    }, 140);
 }
 
 function triggerCalculatorViewerEntryPolish() {
@@ -3556,13 +3964,13 @@ function openViewerFromCalculator() {
         ventRuleSelect.value = selectedVentilationRule;
     }
 
-    setAppMode("viewer");
-    openDrawerToTab("setup");
-    refreshResultsPanel();
-    syncImportedGeometryGateState();
-    updateVentStatusMessage({ forceReveal: true });
-    focusViewerSetupInput();
-    triggerCalculatorViewerEntryPolish();
+    beginVisualizerEntryFlow({
+        afterSelection: () => {
+            openDrawerToTab("setup");
+            focusViewerSetupInput();
+            triggerCalculatorViewerEntryPolish();
+        }
+    });
 }
 
 function openViewerFromLaunch() {
@@ -3571,11 +3979,19 @@ function openViewerFromLaunch() {
     syncSetupImportBanner();
     refreshResultsPanel();
     syncImportedGeometryGateState();
-    setAppMode("viewer");
+    beginVisualizerEntryFlow();
 }
 
 function openQuickReportFromLaunch() {
-    openViewerFromLaunch();
+    pendingViewerEntryAfterSelection = null;
+    importedAtticArea = null;
+    calculationSource = "geometry";
+    syncSetupImportBanner();
+    refreshResultsPanel();
+    syncImportedGeometryGateState();
+    setAppMode("viewer");
+    hideRoofSelectionOverlay({ immediate: true });
+    ensureViewerGeometryInitialized();
     const report = buildRoofFloReport();
     openRoofFloReport(report);
 }
@@ -3590,6 +4006,11 @@ function setAppMode(mode) {
     }
     if (calculatorScreen) {
         calculatorScreen.classList.toggle("is-visible", mode === "calculator");
+    }
+    if (mode !== "viewer") {
+        pendingViewerEntryAfterSelection = null;
+        hideRoofSelectionOverlay({ immediate: true });
+        stopRoofOverlayParticles();
     }
     if (mode === "calculator" && calcAtticAreaInput) {
         // Use rAF so the element is fully visible before focusing (avoids display:none focus no-op)
@@ -3659,6 +4080,30 @@ calcAtticAreaInput?.addEventListener("keydown", (event) => {
 calcCopyResultsButton?.addEventListener("click", onCopyQuickResults);
 calcShareResultsButton?.addEventListener("click", onShareQuickResults);
 btnCalcOpenViewer?.addEventListener("click", openViewerFromCalculator);
+roofTypeSelect?.addEventListener("change", () => {
+    selectedRoofType = roofTypeSelect.value;
+    hasExplicitRoofTypeSelection = true;
+    currentLayoutSource = "manual";
+
+    if (hasInitializedViewerGeometry) {
+        rebuildGeometryFromInputs();
+        refreshResultsPanel();
+        syncImportedGeometryGateState();
+        updateVentStatusMessage();
+    }
+});
+
+for (const card of roofSelectionCards) {
+    card.addEventListener("click", () => {
+        const roofType = card.dataset.roofType;
+
+        if (!roofType) {
+            return;
+        }
+
+        onRoofTypeSelected(roofType);
+    });
+}
 
 btnSetupUseGeometry?.addEventListener("click", () => {
     calculationSource = "geometry";
@@ -3674,6 +4119,8 @@ if (calcShareResultsButton && navigator.share) {
 }
 
 initializeLaunchParticles();
+ensureRoofOverlayParticleLayer();
+window.addEventListener("resize", resizeRoofOverlayParticles);
 syncLaunchParticleAnimation("launch");
 updateVentRuleHelpText();
 
