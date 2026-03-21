@@ -30,6 +30,7 @@ import {
     calculateVentilationStatus,
     formatVentilationValue
 } from "./modules/calculations.js";
+import { createRoofFloReport } from "./modules/report.js";
 import {
     initializeAirflowVisualization,
     startAirflowSimulation,
@@ -114,6 +115,34 @@ const presentationResumeButton = document.getElementById("btn-presentation-resum
 const presentationBackButton = document.getElementById("btn-presentation-back");
 const presentationNextButton = document.getElementById("btn-presentation-next");
 const presentationExitButton = document.getElementById("btn-presentation-exit");
+const reportOverlay = document.getElementById("report-overlay");
+const reportGeneratedAt = document.getElementById("report-generated-at");
+const reportSolutionType = document.getElementById("report-solution-type");
+const reportCurrentLabel = document.getElementById("report-current-label");
+const reportCurrentIntakeCount = document.getElementById("report-current-intake-count");
+const reportCurrentStaticCount = document.getElementById("report-current-static-count");
+const reportCurrentRidgeLinearFeet = document.getElementById("report-current-ridge-linear-feet");
+const reportCurrentRequiredTotal = document.getElementById("report-current-required-total");
+const reportCurrentRequiredIntake = document.getElementById("report-current-required-intake");
+const reportCurrentRequiredExhaust = document.getElementById("report-current-required-exhaust");
+const reportCurrentInstalledIntake = document.getElementById("report-current-installed-intake");
+const reportCurrentInstalledExhaust = document.getElementById("report-current-installed-exhaust");
+const reportCurrentStatus = document.getElementById("report-current-status");
+const reportSolutionLabel = document.getElementById("report-solution-label");
+const reportSolutionIntakeCount = document.getElementById("report-solution-intake-count");
+const reportSolutionStaticCount = document.getElementById("report-solution-static-count");
+const reportSolutionRidgeLinearFeet = document.getElementById("report-solution-ridge-linear-feet");
+const reportSolutionRequiredTotal = document.getElementById("report-solution-required-total");
+const reportSolutionRequiredIntake = document.getElementById("report-solution-required-intake");
+const reportSolutionRequiredExhaust = document.getElementById("report-solution-required-exhaust");
+const reportSolutionInstalledIntake = document.getElementById("report-solution-installed-intake");
+const reportSolutionInstalledExhaust = document.getElementById("report-solution-installed-exhaust");
+const reportSolutionStatus = document.getElementById("report-solution-status");
+const reportExplanationHeadline = document.getElementById("report-explanation-headline");
+const reportExplanationSummary = document.getElementById("report-explanation-summary");
+const reportExplanationBullets = document.getElementById("report-explanation-bullets");
+const reportBackViewerButton = document.getElementById("btn-report-back-viewer");
+const reportCloseButton = document.getElementById("btn-report-close");
 
 const placementButtons = [
     { mode: PlacementMode.INTAKE, button: intakeVentButton },
@@ -152,6 +181,7 @@ let presentationCameraTransition = null;
 let presentationSolutionPhase = 0;
 let isSolutionSequenceRunning = false;
 let presentationSolutionTimers = [];
+let activeReport = null;
 
 function initializeLucideIcons() {
     if (!window.lucide || typeof window.lucide.createIcons !== "function") {
@@ -567,7 +597,7 @@ function updatePresentationStepUi() {
         presentationBackButton.disabled = presentationStepIndex === 0;
     }
     if (presentationNextButton) {
-        presentationNextButton.textContent = presentationStepIndex === presentationSteps.length - 1 ? "Finish" : "Next";
+        presentationNextButton.textContent = presentationStepIndex === presentationSteps.length - 1 ? "View Report" : "Next";
     }
     if (presentationResumeButton) {
         presentationResumeButton.hidden = !hasPresentationCameraOverride;
@@ -685,7 +715,7 @@ function enterPresentationMode() {
     loadPresentationStep(0);
 }
 
-function exitPresentationMode() {
+function exitPresentationMode({ restoreBaseSnapshot = true } = {}) {
     if (!isPresentationMode) {
         return;
     }
@@ -699,7 +729,7 @@ function exitPresentationMode() {
     cancelSolutionSequence();
     setPresentationAutoCameraState(false);
 
-    if (snapshotToRestore) {
+    if (restoreBaseSnapshot && snapshotToRestore) {
         restoreViewerSnapshot(snapshotToRestore);
     }
 
@@ -708,13 +738,205 @@ function exitPresentationMode() {
     updateVentStatusMessage({ forceReveal: true });
 }
 
+function getViewerFallbackReportEntry(label) {
+    return {
+        snapshotId: null,
+        label,
+        snapshot: createViewerSnapshot({ label, source: currentLayoutSource || "unknown" })
+    };
+}
+
+function getSnapshotReportEntryByRole(role) {
+    const slide = getSnapshotByRole(role);
+    const snapshot = coerceSnapshot(slide?.snapshot);
+
+    if (!slide || !snapshot) {
+        return null;
+    }
+
+    return {
+        snapshotId: slide.id,
+        label: slide.label,
+        snapshot
+    };
+}
+
+function buildRoofFloReport() {
+    const currentFromRole = getSnapshotReportEntryByRole("current");
+    const solutionFromRole = getSnapshotReportEntryByRole("solution");
+
+    const currentEntry = currentFromRole || getViewerFallbackReportEntry("Current Viewer State");
+    const solutionEntry = solutionFromRole || getViewerFallbackReportEntry("Recommended Solution (Viewer Fallback)");
+
+    const solutionType = solutionFromRole?.snapshot?.solutionType || "balanced";
+
+    return createRoofFloReport({
+        generatedAt: new Date().toISOString(),
+        solutionType,
+        currentEntry,
+        solutionEntry
+    });
+}
+
+function applyReportSectionToUi(section, uiNodes, statusLabel) {
+    if (!section || !uiNodes) {
+        return;
+    }
+
+    const {
+        labelNode,
+        intakeNode,
+        staticNode,
+        ridgeNode,
+        requiredTotalNode,
+        requiredIntakeNode,
+        requiredExhaustNode,
+        installedIntakeNode,
+        installedExhaustNode,
+        statusNode
+    } = uiNodes;
+
+    if (labelNode) {
+        labelNode.textContent = section.label || statusLabel;
+    }
+
+    if (intakeNode) {
+        intakeNode.textContent = String(section.counts?.intake ?? 0);
+    }
+
+    if (staticNode) {
+        staticNode.textContent = String(section.counts?.static ?? 0);
+    }
+
+    if (ridgeNode) {
+        const ridgeFeet = Number(section.counts?.ridgeLinearFeet ?? 0);
+        ridgeNode.textContent = `${ridgeFeet.toFixed(1)} ft`;
+    }
+
+    if (requiredTotalNode) {
+        requiredTotalNode.textContent = formatVentilationValue(section.nfva?.requiredNetFreeArea ?? 0);
+    }
+
+    if (requiredIntakeNode) {
+        requiredIntakeNode.textContent = formatVentilationValue(section.nfva?.requiredIntake ?? 0);
+    }
+
+    if (requiredExhaustNode) {
+        requiredExhaustNode.textContent = formatVentilationValue(section.nfva?.requiredExhaust ?? 0);
+    }
+
+    if (installedIntakeNode) {
+        installedIntakeNode.textContent = formatVentilationValue(section.nfva?.installedIntake ?? 0);
+    }
+
+    if (installedExhaustNode) {
+        installedExhaustNode.textContent = formatVentilationValue(section.nfva?.installedExhaust ?? 0);
+    }
+
+    if (statusNode) {
+        statusNode.textContent = section.status || statusLabel;
+    }
+}
+
+function renderRoofFloReport(report) {
+    if (!report) {
+        return;
+    }
+
+    if (reportGeneratedAt) {
+        const generatedDate = new Date(report.generatedAt);
+        reportGeneratedAt.textContent = `Generated ${generatedDate.toLocaleString()}`;
+    }
+
+    if (reportSolutionType) {
+        reportSolutionType.textContent = report.solutionType || "balanced";
+    }
+
+    applyReportSectionToUi(report.current, {
+        labelNode: reportCurrentLabel,
+        intakeNode: reportCurrentIntakeCount,
+        staticNode: reportCurrentStaticCount,
+        ridgeNode: reportCurrentRidgeLinearFeet,
+        requiredTotalNode: reportCurrentRequiredTotal,
+        requiredIntakeNode: reportCurrentRequiredIntake,
+        requiredExhaustNode: reportCurrentRequiredExhaust,
+        installedIntakeNode: reportCurrentInstalledIntake,
+        installedExhaustNode: reportCurrentInstalledExhaust,
+        statusNode: reportCurrentStatus
+    }, "Current Status");
+
+    applyReportSectionToUi(report.solution, {
+        labelNode: reportSolutionLabel,
+        intakeNode: reportSolutionIntakeCount,
+        staticNode: reportSolutionStaticCount,
+        ridgeNode: reportSolutionRidgeLinearFeet,
+        requiredTotalNode: reportSolutionRequiredTotal,
+        requiredIntakeNode: reportSolutionRequiredIntake,
+        requiredExhaustNode: reportSolutionRequiredExhaust,
+        installedIntakeNode: reportSolutionInstalledIntake,
+        installedExhaustNode: reportSolutionInstalledExhaust,
+        statusNode: reportSolutionStatus
+    }, "Solution Status");
+
+    if (reportExplanationHeadline) {
+        reportExplanationHeadline.textContent = report.explanation?.headline || "Recommended ventilation layout";
+    }
+
+    if (reportExplanationSummary) {
+        reportExplanationSummary.textContent = report.explanation?.summary || "The recommended solution improves intake and exhaust balance to support attic airflow.";
+    }
+
+    if (reportExplanationBullets) {
+        reportExplanationBullets.innerHTML = "";
+        const bullets = Array.isArray(report.explanation?.bullets) ? report.explanation.bullets : [];
+
+        for (const bullet of bullets) {
+            const item = document.createElement("li");
+            item.textContent = bullet;
+            reportExplanationBullets.appendChild(item);
+        }
+    }
+}
+
+function openRoofFloReport(report) {
+    if (!report) {
+        return;
+    }
+
+    activeReport = report;
+    renderRoofFloReport(report);
+    workspace?.classList.add("is-report-open");
+
+    if (reportOverlay) {
+        reportOverlay.hidden = false;
+    }
+
+    closeResultsPanel();
+    hideStatusPopover();
+}
+
+function closeRoofFloReport() {
+    activeReport = null;
+    workspace?.classList.remove("is-report-open");
+
+    if (reportOverlay) {
+        reportOverlay.hidden = true;
+    }
+}
+
+function onViewReportFromPresentation() {
+    exitPresentationMode({ restoreBaseSnapshot: false });
+    const report = buildRoofFloReport();
+    openRoofFloReport(report);
+}
+
 function onPresentationNextClicked() {
     if (!isPresentationMode) {
         return;
     }
 
     if (presentationStepIndex >= presentationSteps.length - 1) {
-        exitPresentationMode();
+        onViewReportFromPresentation();
         return;
     }
 
@@ -2473,6 +2695,8 @@ presentationResumeButton?.addEventListener("click", onPresentationResumeClicked)
 presentationBackButton?.addEventListener("click", onPresentationBackClicked);
 presentationNextButton?.addEventListener("click", onPresentationNextClicked);
 presentationExitButton?.addEventListener("click", exitPresentationMode);
+reportBackViewerButton?.addEventListener("click", closeRoofFloReport);
+reportCloseButton?.addEventListener("click", closeRoofFloReport);
 snapshotAddButton?.addEventListener("click", () => {
     const added = addSnapshotSlideFromCurrent();
     if (added) {
@@ -2548,6 +2772,17 @@ if (typeof window !== "undefined") {
         renameSnapshotSlide: (snapshotId, label) => renameSnapshotSlide(snapshotId, label),
         reorderSnapshotSlides: (fromId, toId) => reorderSnapshotSlides(fromId, toId),
         removeSnapshotSlide: (snapshotId) => removeSnapshotSlide(snapshotId)
+    };
+
+    window.roofFloReportApi = {
+        buildReport: () => buildRoofFloReport(),
+        getActiveReport: () => (activeReport ? structuredClone(activeReport) : null),
+        openReport: () => {
+            const report = buildRoofFloReport();
+            openRoofFloReport(report);
+            return structuredClone(report);
+        },
+        closeReport: () => closeRoofFloReport()
     };
 }
 
