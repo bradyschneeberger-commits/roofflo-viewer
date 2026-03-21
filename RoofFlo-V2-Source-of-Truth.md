@@ -1,260 +1,290 @@
 # RoofFlo V3 — Source of Truth
 
-## PURPOSE
-RoofFlo is an interactive 3D ventilation visualization and sales tool designed to help roofing professionals explain attic airflow and recommend proper ventilation systems to homeowners.
+## 🎯 Product Vision
+RoofFlo is a visual roofing ventilation sales and design tool that allows contractors to:
+- simulate attic airflow
+- demonstrate ventilation problems
+- present a clear solution
+- convert that into a proposal
 
-The system is built for:
-- Visual education
-- Sales presentation
-- Scenario comparison
-- Report generation (future phase)
+Goal:
+Turn complex ventilation concepts into a simple, visual sales experience homeowners instantly understand.
 
----
+--------------------------------------------------
 
-## CORE PRINCIPLES
+## 🧱 CORE SYSTEMS
 
-- 1 unit = 1 foot (Three.js scale)
-- Ridge is always centered
-- Intake = eaves (lower roof edges)
-- Exhaust = ridge or high roof placement
-- Simulation is visual + educational (not CFD accurate)
-- Users can build incorrect systems (we warn, not block)
-- Viewer is state-driven (snapshot-based)
+### 1. Geometry System
+- Generates attic + intake plenum structure
+- Inputs:
+  - width
+  - length
+  - pitch
+  - overhang
+- Rules:
+  - 1 unit = 1 foot
+  - ridge always centered
 
----
+--------------------------------------------------
 
-## SYSTEM ARCHITECTURE
+### 2. Vent Placement System
+Supports:
+- Intake vents
+- Static vents
+- Ridge vents
 
-### Viewer Model
-RoofFlo uses a **single viewer architecture**.
+Behavior:
+- Placement constrained to valid zones
+- Static vents snap to alignment (center line)
+- Ridge vents render:
+  - center opening strip
+  - full vent width overlay
 
-- One Three.js scene
-- Snapshots load into the same viewer
-- No multi-viewer system
-- Viewer acts as a **state renderer**, not a static scene
+--------------------------------------------------
 
----
+### 3. Simulation System
+- Particle-based airflow visualization
 
-## CURRENT SYSTEM STATE
+Shows:
+- trapped air (no ventilation)
+- inefficient flow (imbalanced systems)
+- proper airflow (balanced system)
 
-### GEOMETRY
-- Dynamic attic geometry
-- Pitch controls height
-- Intake plenums present
-- Ridge centered
+States:
+- idle
+- running
+- reset
 
-### VENT SYSTEM
-- Intake vents (snap to eaves)
-- Static vents (single slope constraint)
-- Ridge vents (continuous, dual-side visualization)
+--------------------------------------------------
 
-### PLACEMENT SYSTEM
-- Placement modes:
-  - Intake
-  - Static
-  - Ridge
-- Snap alignment enabled
-- Clean placement behavior
+### 4. Snapshot System (CRITICAL)
 
-### CALCULATIONS
-- NFVA based
-- Required vs installed
-- Intake / exhaust split
-- Status detection:
-  - Under-ventilated
-  - Intake deficient
-  - Exhaust deficient
-  - Balanced
+Snapshots represent complete system states.
 
-### AIRFLOW SYSTEM
-- Particle-based simulation
-- Stale air baseline
-- Fresh air introduction via intake
-- Exhaust removal behavior
-- Ridge deflection behavior implemented
-- Performance stabilized
+Includes:
+- geometry
+- vent layout
+- ventilation calculations
+- metadata
 
----
+#### Snapshot Metadata
 
-## SNAPSHOT SYSTEM (NEW CORE FEATURE)
+{
+  role: "current" | "solution" | null,
+  solutionType: "balanced" | "upgrade" | null,
+  isUserCreated: boolean
+}
 
-### Concept
-Snapshots represent **viewer states**, not images.
+#### Slide Structure
 
-Each snapshot includes:
-- Geometry inputs
-- Vent layout
-- Ventilation rule
-- Metadata (optional)
+{
+  id,
+  label,
+  role,
+  solutionType,
+  isUserCreated,
+  snapshot
+}
 
-Snapshots:
-- Can be saved
-- Can be restored
-- Rebuild the full viewer state
-- Can run simulation
+--------------------------------------------------
 
-### Purpose
-Snapshots act as:
-- Presentation slides
-- Scenario states
-- Report building blocks
+### 5. Snapshot Roles (CORE)
 
----
+Roles define presentation meaning:
 
-## SNAPSHOT STRIP (BUILD MODE)
+- current → homeowner’s existing system
+- solution → recommended system
 
-- Bottom bar displays saved snapshots
-- Each snapshot is selectable
-- Active snapshot loads into viewer
-- Supports:
-  - Add snapshot
-  - Select snapshot
-  - Reorder (basic)
-  - Delete
+Rules:
+- Only ONE current snapshot
+- Only ONE solution snapshot
+- New assignment overrides previous
 
-This is the foundation of:
-- Presentation mode
-- Report workflow
-- Bubble integration
+--------------------------------------------------
 
----
+### 6. Snapshot UI Workflow
 
-## CURRENT UI (TRANSITION STATE)
+Users can:
+- Add Slide (neutral)
+- Mark as Current
+- Mark as Solution
 
-### Existing Layout (Being Replaced)
-- Left control panel
-- Right results panel
-- Top toolbar (text buttons)
-- Bottom snapshot bar (new)
+Visual indicators:
+- CURRENT badge
+- SOLUTION badge
 
----
+Goal:
+No developer tools required to structure presentation
 
-## NEXT PHASE — WORKSPACE REFACTOR
+--------------------------------------------------
 
-### TARGET UI MODEL
+## 🎬 PRESENTATION MODE (CORE FEATURE)
 
-#### Top Action Bar (Icon-Based)
-- Start Simulation
-- Reset
-- Grid Toggle
-- Save Snapshot
-- Results
+### Step Structure
 
-#### Bottom Tool Panel (Unified Panel)
-Tabbed system:
-- Setup
-- Vent Placement
-- Presets (Snapshots later)
+Step 1
+No ventilation → trapped heat & moisture
 
-Mobile-style:
-- Slide-up / drawer behavior
-- Used across desktop + mobile
+Step 2
+Imbalanced system → ineffective
 
-#### Viewer Area
-- Primary focus
-- Clean, unobstructed
-- Central to experience
+Step 3
+Balanced ventilation concept
 
-#### Snapshot Strip
-- Remains at bottom
-- Works with new layout
-- Acts as slide builder
+Step 4 — CURRENT SYSTEM
+- Loads snapshot with role: "current"
+- Acts as pause / discussion checkpoint
+- No automatic transition
 
----
+Step 5 — SOLUTION
 
-## PRODUCT WORKFLOW (TARGET)
+Single step with internal phases:
 
-### Build Mode
-- User configures system
-- Saves snapshots
-- Builds sequence of scenarios
+--------------------------------------------------
 
-### Preview Mode (NEXT)
-- User reviews snapshots in order
-- Viewer loads each state
-- Minimal editing UI
+### Step 5 Internal Phases
 
-### Present Mode (FUTURE)
-- Homeowner-facing experience
-- Clean UI
-- Guided storytelling
+Phase 5A — Intake Upgrade
+- reveal / replace intake system
 
----
+Phase 5B — Exhaust Upgrade
+- reveal / replace exhaust system
 
-## PRODUCT DIRECTION
+Phase 5C — Balanced System
+- start simulation
+- show airflow working
 
-RoofFlo is NOT:
-- a full roofing CRM
-- a measurement tool
-- a replacement for Roofr
+--------------------------------------------------
 
-RoofFlo IS:
-- a ventilation visualization engine
-- a sales presentation tool
-- a scenario comparison system
+### Presentation Behavior Rules
 
----
+- Do NOT animate vents individually
+- Animate by system groups (intake / exhaust)
+- Keep transitions clean and professional
+- Avoid flashy effects
 
-## DEVELOPMENT PHASES
+--------------------------------------------------
 
-### Phase A — Core System (COMPLETE)
-- Geometry
-- Vent placement
-- Calculations
-- Airflow simulation
+### Timing
 
-### Phase B — Simulation + UX Stability (COMPLETE)
-- Airflow refinement
-- Performance improvements
-- Visual clarity improvements
+- Optional delay before Phase 5A (~500–700ms)
+- Intake phase ~1s
+- Exhaust phase ~1s
+- Then simulation starts
 
-### Phase C — Sales System Layer (CURRENT)
+--------------------------------------------------
 
-#### C1 — Workspace UI Refactor (IN PROGRESS)
-- Replace side panels
-- Add bottom tool panel
-- Convert toolbar to icon-based
-- Clean viewer focus
+### Camera Behavior
 
-#### C2 — Snapshot Workflow Expansion
-- Labeling
-- Ordering improvements
-- Slide behavior
+- Uses presentation framing system
+- Slow orbit allowed
+- Stable during transitions
 
-#### C3 — Preview Mode
-- Non-edit viewing
-- Snapshot playback
+--------------------------------------------------
 
-#### C4 — Presentation Mode
-- Clean UI
-- Guided experience
-- Homeowner-ready
+### Navigation
 
----
+- Back
+- Next
+- Exit
 
-## FUTURE PHASES
+Step 5:
+- runs automatically (no sub-step clicks)
 
-### Phase D — App Integration
-- Bubble workspace connection
-- Slide builder inside app
-- Report creation
+--------------------------------------------------
 
-### Phase E — Sharing & Reports
-- Share links
-- PDF generation
-- Client-facing outputs
+### Fallback Rules
 
-### Phase F — Expansion
-- Additional roof types (hip, etc.)
-- More vent systems
-- Manufacturer integrations
+If missing:
+- current snapshot → fallback to current viewer state
+- solution snapshot → fallback to balanced concept
 
----
+Never:
+- crash
+- break presentation flow
 
-## KEY PRINCIPLE MOVING FORWARD
+--------------------------------------------------
 
-RoofFlo is now:
-> A state-driven visual presentation engine
+## 🧮 CALCULATION SYSTEM
 
-NOT:
-> A simple interactive viewer
+- Calculates required ventilation
+- Calculates installed ventilation
+
+Determines:
+- balanced
+- under-ventilated
+- imbalanced
+
+--------------------------------------------------
+
+## 🎯 UX PRINCIPLES
+
+- Contractor-first workflow
+- Minimal friction
+- Visual clarity over technical detail
+- No unnecessary UI layers
+- Mobile-first considerations
+
+--------------------------------------------------
+
+## 🚀 CURRENT STATE
+
+- Snapshot system supports roles
+- UI supports Current / Solution assignment
+- Presentation Mode uses role-based slides
+- Step 4 + Step 5 implemented
+- Solution phases implemented
+- Timing refinement added
+
+System is now a functional sales tool.
+
+--------------------------------------------------
+
+## ⚠️ NEXT PRIORITIES
+
+1. Enforce single current / solution at code level
+2. Minor timing polish (Step 5 pacing)
+3. Proposal / Report screen
+4. Snapshot labeling enhancements
+
+--------------------------------------------------
+
+## 📦 PARKED / FUTURE IDEAS
+
+### Presentation Enhancements
+- Replace “Finish” with:
+  - “Show Solution”
+  - or “View Report”
+- Transition directly into proposal screen
+
+### Proposal System
+- Show:
+  - vent counts
+  - system type
+  - explanation
+  - product recommendations
+
+### Multiple Solutions
+- Balanced
+- Upgrade
+- Budget
+
+### Simulation Improvements
+- Start with trapped particles
+- Show intake-only vs exhaust-only inefficiency
+
+### UI Improvements
+- Unified mobile drawer
+- Sliding desktop panels
+- Cleaner action bar
+
+### Visual Polish
+- Vent colors
+- Grid styling
+- Panel sizing
+
+### Business Layer
+- SaaS pricing
+- Accounts
+- Save/share projects
+- Platform integrations

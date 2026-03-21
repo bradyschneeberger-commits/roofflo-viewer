@@ -149,6 +149,9 @@ let presentationBaseSnapshot = null;
 let isPresentationAutoCamera = false;
 let hasPresentationCameraOverride = false;
 let presentationCameraTransition = null;
+let presentationSolutionPhase = 0;
+let isSolutionSequenceRunning = false;
+let presentationSolutionTimers = [];
 
 function initializeLucideIcons() {
     if (!window.lucide || typeof window.lucide.createIcons !== "function") {
@@ -180,10 +183,16 @@ const presentationSteps = [
         scenario: "balanced"
     },
     {
-        id: "this-home",
-        title: "This home needs a complete, balanced roof ventilation system",
-        support: "Proper ventilation helps protect shingles, decking, and overall roof performance.",
-        scenario: "current-home"
+        id: "current-snapshot",
+        title: "This is how your roof is currently ventilated",
+        support: "Review the existing system before seeing the upgrade plan.",
+        scenario: "current-snapshot"
+    },
+    {
+        id: "solution-sequence",
+        title: "Here\u2019s how we fix it",
+        support: "Upgrading intake and exhaust together creates a complete, balanced system.",
+        scenario: "solution-sequence"
     }
 ];
 
@@ -204,6 +213,11 @@ const presentationCameraPresets = [
         durationMs: 320
     },
     {
+        position: { x: 12.5, y: 10.2, z: 18.5 },
+        target: { x: 0, y: 4.4, z: 0 },
+        durationMs: 360
+    },
+    {
         position: { x: 16.2, y: 14.6, z: 20.5 },
         target: { x: 0, y: 5.4, z: 0 },
         durationMs: 380
@@ -214,6 +228,7 @@ const PRESENTATION_AUTO_ROTATE_SPEED = 0.55;
 const PRESENTATION_CAMERA_TRANSITION_MS = 320;
 const PRESENTATION_RESUME_TARGET_ONLY_MS = 220;
 const PRESENTATION_RESUME_NEAR_DISTANCE_SQ = 2.25;
+const SNAPSHOT_ROLES = new Set(["problem", "partial", "balanced", "current", "solution", "custom"]);
 
 // Store selected ventilation rule for future calculations.
 let selectedVentilationRule = ventRuleSelect?.value || "1/150";
@@ -383,6 +398,122 @@ function restartPresentationSimulation() {
     updateSimulationButtonUI();
 }
 
+function cancelSolutionSequence() {
+    for (const timerId of presentationSolutionTimers) {
+        clearTimeout(timerId);
+    }
+    presentationSolutionTimers = [];
+    isSolutionSequenceRunning = false;
+    presentationSolutionPhase = 0;
+}
+
+function setPresentationPhaseMessage(title, support) {
+    if (presentationStepTitle) {
+        presentationStepTitle.textContent = title;
+    }
+    if (presentationStepSupport) {
+        presentationStepSupport.textContent = support;
+    }
+}
+
+function startSolutionSequence() {
+    if (!isPresentationMode) {
+        return;
+    }
+
+    cancelSolutionSequence();
+
+    const solutionSlide = getSnapshotByRole("solution");
+
+    if (!solutionSlide) {
+        clearAllVents();
+        generateBalancedPreset({ ventilationRule: selectedVentilationRule });
+        presentationSolutionPhase = 3;
+        setPresentationPhaseMessage(
+            "Balanced Roof Ventilation System",
+            "Now air moves through the attic the way the roof system is designed to perform."
+        );
+        restartPresentationSimulation();
+        refreshResultsPanel();
+        updateVentStatusMessage({ forceReveal: true });
+        return;
+    }
+
+    const solutionSnapshot = coerceSnapshot(solutionSlide.snapshot);
+    if (!solutionSnapshot) {
+        return;
+    }
+
+    const currentLayout = exportCurrentVentLayout() || { intake: [], static: [], ridge: [] };
+    const currentStatic = Array.isArray(currentLayout.static) ? currentLayout.static : [];
+    const currentRidge = Array.isArray(currentLayout.ridge) ? currentLayout.ridge : [];
+
+    const solutionIntake = solutionSnapshot.vents.intake;
+    const solutionStatic = solutionSnapshot.vents.static;
+    const solutionRidge = solutionSnapshot.vents.ridge;
+
+    isSolutionSequenceRunning = true;
+    presentationSolutionPhase = 1;
+
+    setPresentationPhaseMessage(
+        "Intake Upgrade",
+        "Fresh air must be able to enter the attic properly."
+    );
+
+    const timer5a = setTimeout(() => {
+        if (!isPresentationMode || !isSolutionSequenceRunning) {
+            return;
+        }
+
+        restoreVentLayout({
+            intake: solutionIntake,
+            static: currentStatic,
+            ridge: currentRidge
+        });
+        refreshResultsPanel();
+        updateVentStatusMessage({ forceReveal: true });
+    }, 600);
+
+    presentationSolutionTimers.push(timer5a);
+
+    const timer5b = setTimeout(() => {
+        if (!isPresentationMode || !isSolutionSequenceRunning) {
+            return;
+        }
+
+        presentationSolutionPhase = 2;
+        setPresentationPhaseMessage(
+            "Exhaust Upgrade",
+            "Heat and moisture need a clear path to escape."
+        );
+        restoreVentLayout({
+            intake: solutionIntake,
+            static: solutionStatic,
+            ridge: solutionRidge
+        });
+        refreshResultsPanel();
+        updateVentStatusMessage({ forceReveal: true });
+
+        const timer5c = setTimeout(() => {
+            if (!isPresentationMode || !isSolutionSequenceRunning) {
+                return;
+            }
+
+            presentationSolutionPhase = 3;
+            isSolutionSequenceRunning = false;
+            setPresentationPhaseMessage(
+                "Balanced Roof Ventilation System",
+                "Now air moves through the attic the way the roof system is designed to perform."
+            );
+            restartPresentationSimulation();
+        }, 1100);
+
+        presentationSolutionTimers.push(timer5c);
+    }, 1700);
+
+    presentationSolutionTimers.push(timer5b);
+}
+
 function setPresentationAutoCameraState(enabled, { userOverride = false } = {}) {
     isPresentationAutoCamera = enabled;
     hasPresentationCameraOverride = userOverride;
@@ -473,6 +604,8 @@ function loadPresentationStep(index) {
         return false;
     }
 
+    cancelSolutionSequence();
+
     const clampedIndex = Math.max(0, Math.min(presentationSteps.length - 1, index));
     presentationStepIndex = clampedIndex;
     const step = presentationSteps[presentationStepIndex];
@@ -482,6 +615,8 @@ function loadPresentationStep(index) {
         return false;
     }
 
+    let shouldStartSimulation = true;
+
     if (step.scenario === "none") {
         clearAllVents();
     } else if (step.scenario === "exhaust-only") {
@@ -490,6 +625,18 @@ function loadPresentationStep(index) {
     } else if (step.scenario === "balanced") {
         clearAllVents();
         generateBalancedPreset({ ventilationRule: selectedVentilationRule });
+    } else if (step.scenario === "current-snapshot") {
+        const currentSlide = getSnapshotByRole("current");
+        if (currentSlide) {
+            restoreViewerSnapshot(currentSlide.snapshot);
+        }
+        shouldStartSimulation = false;
+    } else if (step.scenario === "solution-sequence") {
+        const currentSlide = getSnapshotByRole("current");
+        if (currentSlide) {
+            restoreViewerSnapshot(currentSlide.snapshot);
+        }
+        shouldStartSimulation = false;
     }
 
     simulationState = SimulationState.IDLE;
@@ -500,7 +647,17 @@ function loadPresentationStep(index) {
     clearVentPreview();
 
     startPresentationCameraTransition(presentationStepIndex);
-    restartPresentationSimulation();
+
+    if (shouldStartSimulation) {
+        restartPresentationSimulation();
+    } else {
+        updateSimulationButtonUI();
+    }
+
+    if (step.scenario === "solution-sequence") {
+        startSolutionSequence();
+    }
+
     refreshResultsPanel();
     updateVentStatusMessage({ forceReveal: true });
     updatePresentationStepUi();
@@ -539,6 +696,7 @@ function exitPresentationMode() {
     presentationBaseSnapshot = null;
     hasPresentationCameraOverride = false;
     presentationCameraTransition = null;
+    cancelSolutionSequence();
     setPresentationAutoCameraState(false);
 
     if (snapshotToRestore) {
@@ -603,6 +761,18 @@ function createSnapshotSlide(snapshot, options = {}) {
         return null;
     }
 
+    if (Object.prototype.hasOwnProperty.call(options, "role")) {
+        normalized.role = normalizeSnapshotRole(options.role, { allowNull: true });
+    }
+
+    if (Object.prototype.hasOwnProperty.call(options, "solutionType")) {
+        normalized.solutionType = normalizeSnapshotSolutionType(options.solutionType);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(options, "isUserCreated")) {
+        normalized.isUserCreated = normalizeSnapshotIsUserCreated(options.isUserCreated);
+    }
+
     const label = typeof options.label === "string" && options.label.trim()
         ? options.label.trim()
         : (normalized.meta?.label || `Slide ${snapshotSlideIdSeed}`);
@@ -634,7 +804,13 @@ function setActiveSnapshotCard(snapshotId) {
 }
 
 function addSnapshotSlideFromCurrent(options = {}) {
-    const snapshot = createViewerSnapshot({ source: currentLayoutSource || "unknown" });
+    const snapshot = createViewerSnapshot({
+        source: currentLayoutSource || "unknown",
+        label: typeof options.label === "string" ? options.label : null,
+        role: Object.prototype.hasOwnProperty.call(options, "role") ? options.role : null,
+        solutionType: Object.prototype.hasOwnProperty.call(options, "solutionType") ? options.solutionType : null,
+        isUserCreated: Object.prototype.hasOwnProperty.call(options, "isUserCreated") ? options.isUserCreated : true
+    });
     const slide = createSnapshotSlide(snapshot, options);
     if (!slide) {
         return false;
@@ -679,6 +855,33 @@ function removeSnapshotSlide(snapshotId) {
     }
 
     renderSnapshotStrip();
+}
+
+function getSnapshotsByRole(role) {
+    const normalizedRole = normalizeSnapshotRoleQuery(role);
+    if (!normalizedRole) {
+        return [];
+    }
+
+    return snapshotSlides.filter((slide) => slide?.snapshot?.role === normalizedRole);
+}
+
+function getSnapshotByRole(role) {
+    return getSnapshotsByRole(role)[0] || null;
+}
+
+function setSnapshotRole(snapshotId, role, { solutionType } = {}) {
+    const slide = snapshotSlides.find((item) => item.id === snapshotId);
+    if (!slide || !slide.snapshot) {
+        return false;
+    }
+
+    slide.snapshot.role = normalizeSnapshotRole(role, { allowNull: true });
+    if (solutionType !== undefined) {
+        slide.snapshot.solutionType = normalizeSnapshotSolutionType(solutionType);
+    }
+
+    return true;
 }
 
 function renameSnapshotSlide(snapshotId, label) {
@@ -870,6 +1073,44 @@ function renderSnapshotStrip() {
         bottomMeta.textContent = details.bottomLine;
         card.appendChild(bottomMeta);
 
+        const role = slide.snapshot?.role || null;
+        const roleRow = document.createElement("div");
+        roleRow.className = "snapshot-role-row";
+
+        if (role === "current" || role === "solution") {
+            const badge = document.createElement("span");
+            badge.className = `snapshot-role-badge snapshot-role-badge--${role}`;
+            badge.textContent = role === "current" ? "Current" : "Solution";
+            roleRow.appendChild(badge);
+        } else {
+            const markCurrent = document.createElement("button");
+            markCurrent.type = "button";
+            markCurrent.className = "snapshot-role-mark-btn";
+            markCurrent.textContent = "Mark Current";
+            markCurrent.title = "Mark this slide as the current system on this home";
+            markCurrent.addEventListener("click", (event) => {
+                event.stopPropagation();
+                setSnapshotRole(slide.id, "current");
+                renderSnapshotStrip();
+            });
+
+            const markSolution = document.createElement("button");
+            markSolution.type = "button";
+            markSolution.className = "snapshot-role-mark-btn";
+            markSolution.textContent = "Mark Solution";
+            markSolution.title = "Mark this slide as the recommended solution for this home";
+            markSolution.addEventListener("click", (event) => {
+                event.stopPropagation();
+                setSnapshotRole(slide.id, "solution");
+                renderSnapshotStrip();
+            });
+
+            roleRow.appendChild(markCurrent);
+            roleRow.appendChild(markSolution);
+        }
+
+        card.appendChild(roleRow);
+
         const actions = document.createElement("div");
         actions.className = "snapshot-card-actions";
 
@@ -957,6 +1198,57 @@ function getSnapshotGeometryState() {
     };
 }
 
+function normalizeSnapshotRole(role, { allowNull = true } = {}) {
+    if (role == null) {
+        return allowNull ? null : "custom";
+    }
+
+    if (typeof role !== "string") {
+        return allowNull ? null : "custom";
+    }
+
+    const normalizedRole = role.trim().toLowerCase();
+    if (!normalizedRole) {
+        return allowNull ? null : "custom";
+    }
+
+    if (SNAPSHOT_ROLES.has(normalizedRole)) {
+        return normalizedRole;
+    }
+
+    return "custom";
+}
+
+function normalizeSnapshotRoleQuery(role) {
+    if (role == null) {
+        return null;
+    }
+
+    if (typeof role !== "string") {
+        return null;
+    }
+
+    const normalizedRole = role.trim().toLowerCase();
+    if (!normalizedRole) {
+        return null;
+    }
+
+    return SNAPSHOT_ROLES.has(normalizedRole) ? normalizedRole : null;
+}
+
+function normalizeSnapshotSolutionType(value) {
+    if (typeof value !== "string") {
+        return null;
+    }
+
+    const normalized = value.trim();
+    return normalized ? normalized : null;
+}
+
+function normalizeSnapshotIsUserCreated(value) {
+    return typeof value === "boolean" ? value : null;
+}
+
 function normalizeSnapshotMeta(meta, fallbackSource = "unknown") {
     const source = meta?.source;
     const normalizedSource = source === "manual" || source === "preset" || source === "unknown"
@@ -969,12 +1261,18 @@ function normalizeSnapshotMeta(meta, fallbackSource = "unknown") {
     };
 }
 
-function createViewerSnapshot({ label = null, source = null } = {}) {
+function createViewerSnapshot({ label = null, source = null, role = null, solutionType = null, isUserCreated = null } = {}) {
     const vents = exportCurrentVentLayout();
+    const normalizedRole = normalizeSnapshotRole(role, { allowNull: true });
+    const normalizedSolutionType = normalizeSnapshotSolutionType(solutionType);
+    const normalizedIsUserCreated = normalizeSnapshotIsUserCreated(isUserCreated);
 
     return {
         version: 1,
         createdAt: new Date().toISOString(),
+        role: normalizedRole,
+        solutionType: normalizedSolutionType,
+        isUserCreated: normalizedIsUserCreated,
         geometry: getSnapshotGeometryState(),
         ventilation: {
             rule: selectedVentilationRule || "1/150"
@@ -1009,11 +1307,18 @@ function coerceSnapshot(snapshotCandidate) {
     }
 
     if (snapshotCandidate.version === 1 && snapshotCandidate.geometry && snapshotCandidate.vents) {
+        const normalizedRole = normalizeSnapshotRole(snapshotCandidate.role ?? snapshotCandidate.meta?.role, { allowNull: true });
+        const normalizedSolutionType = normalizeSnapshotSolutionType(snapshotCandidate.solutionType ?? snapshotCandidate.meta?.solutionType);
+        const normalizedIsUserCreated = normalizeSnapshotIsUserCreated(snapshotCandidate.isUserCreated ?? snapshotCandidate.meta?.isUserCreated);
+
         return {
             version: 1,
             createdAt: typeof snapshotCandidate.createdAt === "string"
                 ? snapshotCandidate.createdAt
                 : new Date().toISOString(),
+            role: normalizedRole,
+            solutionType: normalizedSolutionType,
+            isUserCreated: normalizedIsUserCreated,
             geometry: {
                 width: Math.max(1, toNumber(snapshotCandidate.geometry.width, 30)),
                 length: Math.max(1, toNumber(snapshotCandidate.geometry.length, 50)),
@@ -1036,6 +1341,9 @@ function coerceSnapshot(snapshotCandidate) {
         return {
             version: 1,
             createdAt: new Date().toISOString(),
+            role: null,
+            solutionType: null,
+            isUserCreated: null,
             geometry: getSnapshotGeometryState(),
             ventilation: {
                 rule: selectedVentilationRule || "1/150"
@@ -2230,9 +2538,12 @@ if (typeof window !== "undefined") {
         importSnapshotJson: (jsonText, options = {}) => importSnapshotJson(jsonText, options),
         addSnapshotSlide: (options = {}) => addSnapshotSlideFromCurrent(options),
         getSnapshotSlides: () => snapshotSlides.map((slide) => ({
-            id: slide.id,
-            label: slide.label,
-            snapshot: structuredClone(slide.snapshot)
+        id: slide.id,
+        label: slide.label,
+        role: slide.snapshot?.role ?? null,
+        solutionType: slide.snapshot?.solutionType ?? null,
+        isUserCreated: slide.snapshot?.isUserCreated ?? null,
+        snapshot: structuredClone(slide.snapshot)
         })),
         renameSnapshotSlide: (snapshotId, label) => renameSnapshotSlide(snapshotId, label),
         reorderSnapshotSlides: (fromId, toId) => reorderSnapshotSlides(fromId, toId),
@@ -2610,5 +2921,8 @@ export {
     setSavedSnapshot,
     getSavedSnapshot,
     exportSnapshotJson,
-    importSnapshotJson
+    importSnapshotJson,
+    getSnapshotByRole,
+    getSnapshotsByRole,
+    setSnapshotRole
 };
