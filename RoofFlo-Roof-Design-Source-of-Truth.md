@@ -76,6 +76,29 @@ Every roof type must explicitly separate these concepts:
 * overhang
 * intake zone / plenum / eave condition
 
+### Roof-Type Reference Isolation Rule (CRITICAL)
+
+Reference geometry and helper zones must be routed by roofType explicitly.
+
+This includes:
+- intake references
+- exhaust zones
+- ridge references
+- helper surfaces
+- placement guides
+
+Required:
+- each roof type must explicitly define which reference geometries are valid in the current phase
+- Hip must not display or inherit gable-style exhaust-zone geometry unless Hip exhaust regions are explicitly defined for that step
+- geometry-only phases must not show placeholder zones from unrelated roof types
+
+Prohibited:
+- generic fallback reference geometry
+- reusing Gable exhaust-zone helpers for Hip
+- showing future placement/exhaust surfaces before Hip explicitly defines them
+
+---
+
 #### Definitions
 
 * **building footprint** = enclosed structure only
@@ -91,6 +114,25 @@ Every roof type must explicitly separate these concepts:
 * the difference between attic core and roof shell defines the intake zone
 * intake zones must be derived from geometry, not assumed from left/right logic
 * geometry must be correct BEFORE placement logic is applied
+
+---
+
+### Planar Resolution Rule (CRITICAL)
+
+All roof surfaces must be generated from a resolved set of shared vertices before any meshes are created.
+
+Required:
+- compute all key roof vertices first (corners, ridge endpoints, apex if applicable)
+- define all roof planes using those shared vertices
+- ensure all adjoining planes share identical vertex references
+
+Prohibited:
+- generating roof planes independently and attempting to align them afterward
+- computing ridge or hips separately from roof planes
+- deriving apex/ridge after planes are created
+
+Goal:
+All roof surfaces meet cleanly with no gaps, overlaps, or floating references.
 
 ---
 
@@ -122,6 +164,30 @@ A single coherent roof system.
 
 ---
 
+### Shared Boundary Edge Rule (CRITICAL)
+
+Where major roof geometry layers meet, they must share the same exact resolved boundary edges.
+
+This includes the boundary between:
+- attic core and intake zone
+- intake zone and outer roof shell
+- roof planes and ridge/apex references
+
+Required:
+- adjoining geometry layers must reuse identical boundary vertices/edges
+- the inner perimeter breakline at the building footprint must be solved once and reused by all connected layers
+- intake zone must begin from the exact attic-core boundary edge, not an approximated parallel edge
+
+Prohibited:
+- solving adjacent layers separately and visually aligning them afterward
+- near-matching but non-identical perimeter edges
+- small gaps, offsets, or disconnected transitions between roof layers
+
+Goal:
+All connected roof layers must meet on shared resolved edges so the roof reads as one continuous assembly.
+
+---
+
 ### Reference Geometry Anchoring Rule (CRITICAL)
 
 All reference geometry must be derived from and attached to final roof surfaces.
@@ -146,6 +212,37 @@ Prohibited:
 
 ---
 
+### Explicit Geometry Dimension Rule (CRITICAL)
+
+Each roof type must explicitly define separate geometry dimensions for:
+
+- buildingFootprint
+- roofFootprint
+- atticCoreProfile
+- roofShellProfile
+
+Definitions:
+- buildingFootprint = enclosed building width and length only
+- roofFootprint = outer roof width and length including valid overhang extents
+- atticCoreProfile = the enclosed inner attic shape over the buildingFootprint
+- roofShellProfile = the outer roof shape over the roofFootprint
+
+Required:
+- atticCore must be built from buildingFootprint + atticCoreProfile
+- roofEnvelope must be built from roofFootprint + roofShellProfile
+- intakeZones must occupy the space between the atticCore boundary and the roofEnvelope boundary
+- atticCore top geometry must resolve to the true enclosed ridge/apex, not a broad platform
+
+Prohibited:
+- using one footprint definition for both atticCore and roofEnvelope
+- treating the atticCore as a scaled-down roof shell without resolving its own enclosed peak
+- allowing atticCore geometry to extend into the overhang/intake perimeter
+
+Goal:
+Make the enclosed attic volume and the outer roof shell unambiguous in both code and visuals.
+
+---
+
 ### Visual Language Consistency Rule
 
 Shared geometry must maintain consistent visual meaning.
@@ -159,6 +256,21 @@ Examples:
 Prohibited:
 
 * accidental color/material drift
+
+---
+
+### Scene Bounds / Grid Extent Rule
+
+Scene framing helpers must cover the full active roof footprint, including valid overhang extents.
+
+Required:
+- grid / ground references must extend to at least the current roofEnvelope bounds
+- roof overhangs must not visually hang beyond the intended scene support area
+- bounds/framing should be recomputed when roofType or roof dimensions change
+
+Prohibited:
+- sizing the grid only to the enclosed building footprint when the visible roof extends farther
+- leaving the roof visually outside the supported scene area
 
 ---
 
@@ -317,6 +429,22 @@ Use segmented edges for all roofs.
 * Length: 50 ft
 * Pitch: 5/12
 * Overhang: system default
+
+### Hip Structural Resolution Rule (CRITICAL)
+
+Hip must be solved using both:
+- an inner enclosed attic definition
+- an outer roof-shell definition
+
+Hip requires:
+- inner buildingFootprint for atticCore
+- outer roofFootprint for roofEnvelope
+- shared roof topology between them
+- atticCore surfaces that rise to the true enclosed ridge/apex
+- intakeZones occupying the perimeter band between inner and outer boundaries
+
+The atticCore must not keep the same broad top shape as the outer roof shell.
+It must resolve as the true inner enclosed attic form.
 
 ---
 

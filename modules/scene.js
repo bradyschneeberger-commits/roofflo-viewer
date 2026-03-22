@@ -56,8 +56,34 @@ directionalLight.position.set(0, 10, 0);
 scene.add(directionalLight);
 
 // Add helpers
-const gridHelper = new THREE.GridHelper(50, 50);
+let gridHelper = new THREE.GridHelper(50, 50);
 scene.add(gridHelper);
+
+function updateGridExtentForRoof({ roofWidth, roofLength }) {
+    const safeRoofWidth = Number.isFinite(roofWidth) ? roofWidth : 50;
+    const safeRoofLength = Number.isFinite(roofLength) ? roofLength : 50;
+    const maxSpan = Math.max(safeRoofWidth, safeRoofLength, 20);
+    const paddedSpan = Math.ceil((maxSpan + 8) / 2) * 2;
+    const divisions = Math.max(20, Math.ceil(paddedSpan));
+
+    const nextGrid = new THREE.GridHelper(paddedSpan, divisions);
+    nextGrid.visible = gridHelper.visible;
+
+    scene.remove(gridHelper);
+    if (gridHelper.geometry) {
+        gridHelper.geometry.dispose();
+    }
+    if (Array.isArray(gridHelper.material)) {
+        for (const material of gridHelper.material) {
+            material.dispose();
+        }
+    } else if (gridHelper.material) {
+        gridHelper.material.dispose();
+    }
+
+    gridHelper = nextGrid;
+    scene.add(gridHelper);
+}
 
 const axesHelper = new THREE.AxesHelper(5);
 scene.add(axesHelper);
@@ -70,4 +96,4 @@ window.addEventListener('resize', () => {
 });
 
 // Export the scene components
-export { scene, camera, renderer, controls, gridHelper };
+export { scene, camera, renderer, controls, gridHelper, updateGridExtentForRoof };

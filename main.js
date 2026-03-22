@@ -1,4 +1,4 @@
-import { scene, camera, renderer, controls, gridHelper } from "./modules/scene.js";
+import { scene, camera, renderer, controls, gridHelper, updateGridExtentForRoof } from "./modules/scene.js";
 import { createAtticGeometry, getGeometryState } from "./modules/geometry.js";
 import {
     tryPlaceIntakeVent,
@@ -371,6 +371,10 @@ function getGeometryDefaultsForRoofType(roofType) {
     return ROOF_TYPE_GEOMETRY_DEFAULTS[roofType] || ROOF_TYPE_GEOMETRY_DEFAULTS.gable;
 }
 
+function getRoofTypePitchFallback(roofType = selectedRoofType) {
+    return getGeometryDefaultsForRoofType(roofType).pitch;
+}
+
 function getCurrentGeometryInputValues() {
     const fallbackDefaults = getGeometryDefaultsForRoofType(selectedRoofType);
 
@@ -404,19 +408,7 @@ function geometryInputsMatchDefaults(roofType) {
         && current.pitch === defaults.pitch;
 }
 
-function applyRoofTypeDefaultsIfAppropriate(nextRoofType, { force = false, previousRoofType = selectedRoofType } = {}) {
-    if (nextRoofType !== "shed") {
-        return false;
-    }
-
-    const shouldApply = force
-        || !hasInitializedViewerGeometry
-        || geometryInputsMatchDefaults(previousRoofType);
-
-    if (!shouldApply) {
-        return false;
-    }
-
+function applyRoofTypeDefaultsIfAppropriate(nextRoofType) {
     applyGeometryInputValues(getGeometryDefaultsForRoofType(nextRoofType));
     return true;
 }
@@ -1669,7 +1661,7 @@ function getSnapshotGeometryState() {
     return {
         width: Math.max(1, toNumber(houseWidthInput?.value, 30)),
         length: Math.max(1, toNumber(houseLengthInput?.value, 50)),
-        pitch: Math.max(1, toNumber(roofPitchRiseInput?.value, 6)),
+        pitch: Math.max(1, toNumber(roofPitchRiseInput?.value, getRoofTypePitchFallback())),
         overhangDepth: Math.max(0, toNumber(overhangDepthInput?.value, 16))
     };
 }
@@ -1798,7 +1790,7 @@ function coerceSnapshot(snapshotCandidate) {
             geometry: {
                 width: Math.max(1, toNumber(snapshotCandidate.geometry.width, 30)),
                 length: Math.max(1, toNumber(snapshotCandidate.geometry.length, 50)),
-                pitch: Math.max(1, toNumber(snapshotCandidate.geometry.pitch, 6)),
+                pitch: Math.max(1, toNumber(snapshotCandidate.geometry.pitch, getRoofTypePitchFallback())),
                 overhangDepth: Math.max(0, toNumber(snapshotCandidate.geometry.overhangDepth, 16))
             },
             ventilation: {
@@ -2498,10 +2490,14 @@ function rebuildGeometryFromInputs() {
 
     const buildingWidth = Math.max(1, toNumber(houseWidthInput?.value, 30));
     const buildingLength = Math.max(1, toNumber(houseLengthInput?.value, 50));
-    const pitchRise = Math.max(1, toNumber(roofPitchRiseInput?.value, 6));
+    const pitchRise = Math.max(1, toNumber(roofPitchRiseInput?.value, getRoofTypePitchFallback()));
     const overhangDepthInches = Math.max(0, toNumber(overhangDepthInput?.value, 16));
     const overhangDepth = overhangDepthInches / 12;
+    const roofWidth = buildingWidth + (2 * overhangDepth);
+    const roofLength = buildingLength + (2 * overhangDepth);
     const roofType = selectedRoofType || "gable";
+
+    updateGridExtentForRoof({ roofWidth, roofLength });
 
     createAtticGeometry({
         buildingWidth,
@@ -2958,6 +2954,7 @@ function onRestoreCurrentLayoutClicked() {
 // Build default geometry on load.
 initializeLucideIcons();
 syncRoofTypeSelectUI();
+applyRoofTypeDefaultsIfAppropriate(selectedRoofType);
 syncSetupOverview({ roofType: selectedRoofType });
 refreshResultsPanel();
 updateVentStatusMessage({ forceReveal: true });
@@ -3795,10 +3792,7 @@ function hideRoofSelectionOverlay({ immediate = false } = {}) {
 }
 
 function onRoofTypeSelected(roofType) {
-    applyRoofTypeDefaultsIfAppropriate(roofType, {
-        force: roofType === "shed",
-        previousRoofType: selectedRoofType
-    });
+    applyRoofTypeDefaultsIfAppropriate(roofType);
     selectedRoofType = roofType;
     hasExplicitRoofTypeSelection = true;
     syncRoofTypeSelectUI();
@@ -4145,14 +4139,12 @@ calcCopyResultsButton?.addEventListener("click", onCopyQuickResults);
 calcShareResultsButton?.addEventListener("click", onShareQuickResults);
 btnCalcOpenViewer?.addEventListener("click", openViewerFromCalculator);
 roofTypeSelect?.addEventListener("change", () => {
-    const previousRoofType = selectedRoofType;
-    selectedRoofType = roofTypeSelect.value;
+    const nextRoofType = roofTypeSelect.value;
+    applyRoofTypeDefaultsIfAppropriate(nextRoofType);
+    selectedRoofType = nextRoofType;
     hasExplicitRoofTypeSelection = true;
     currentLayoutSource = "manual";
-
-    applyRoofTypeDefaultsIfAppropriate(selectedRoofType, {
-        previousRoofType
-    });
+    syncRoofTypeSelectUI();
 
     if (hasInitializedViewerGeometry) {
         rebuildGeometryFromInputs();
