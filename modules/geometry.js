@@ -48,6 +48,7 @@ let atticSystem = null;
 let buildingFootprintBase = null;
 let roofEnvelope = null;
 let atticCore = null;
+let intakePlenum = null;
 let leftPlenum = null;
 let rightPlenum = null;
 let leftIntakePlacement = null;
@@ -60,6 +61,9 @@ let ridgeCenterLine = null;
 let intakeEdgeLine = null;
 let exhaustEdgeLine = null;
 let atticHeight = 0;
+let intakeZones = null;
+let placementReferences = null;
+let edgeClassification = null;
 
 // Optional stored params
 let currentGeometryParams = null;
@@ -91,6 +95,7 @@ function createGableRoof({ pitchRise, halfBuildingWidth, halfRoofWidth }) {
         ridgeX: 0,
         ridgeY: atticPeakHeight,
         roofSlopeAngle: Math.atan2(pitchRise, pitchRun),
+        hasRidge: true,
         staticPlacement: {
             leftDownslope: 1.5,
             rightDownslope: 1.5
@@ -109,6 +114,12 @@ function createGableRoof({ pitchRise, halfBuildingWidth, halfRoofWidth }) {
                 highSide: "center"
             }
         },
+        edgeClassification: {
+            intakeEdges: ["left-eave", "right-eave"],
+            exhaustEdges: ["ridge"],
+            ridgeEdges: ["ridge"],
+            sideEdges: ["left-rake", "right-rake"]
+        },
         edgeReferenceX: {
             intake: -halfBuildingWidth,
             exhaust: 0
@@ -122,8 +133,8 @@ function createShedRoof({ pitchRise, buildingWidth, overhangDepth, halfBuildingW
     const highWallX = halfBuildingWidth;
     const roofHeightAtLeftOverhang = 0;
     const roofHeightAtBuildingEdgeLeft = slopePerFoot * overhangDepth;
-    const roofHeightAtBuildingEdgeRight = slopePerFoot * (buildingWidth + overhangDepth);
-    const roofHeightAtRightOverhang = roofHeightAtBuildingEdgeRight;
+    const roofHeightAtBuildingEdgeRight = roofHeightAtBuildingEdgeLeft + (slopePerFoot * buildingWidth);
+    const roofHeightAtRightOverhang = null;
     const atticPeakHeight = roofHeightAtBuildingEdgeRight;
 
     return {
@@ -145,20 +156,20 @@ function createShedRoof({ pitchRise, buildingWidth, overhangDepth, halfBuildingW
         roofHeightAtBuildingEdgeRight,
         roofHeightAtLeftOverhang,
         roofHeightAtRightOverhang,
-        ridgeX: highWallX,
-        ridgeY: roofHeightAtBuildingEdgeRight,
+        ridgeX: null,
+        ridgeY: null,
+        exhaustReferenceX: highWallX,
+        exhaustReferenceY: roofHeightAtBuildingEdgeRight,
         roofSlopeAngle: Math.atan2(pitchRise, 12),
+        hasRidge: false,
         staticPlacement: {
-            leftDownslope: 4.5,
-            rightDownslope: 1.5
+            exhaustDownslope: 1.5
         },
         exhaustBands: {
-            left: { inner: 3, outer: 6 },
-            right: { inner: 0, outer: 3 }
+            high: { inner: 0, outer: 3 }
         },
         intakePlacementX: {
-            left: -(halfBuildingWidth + (overhangDepth / 2)),
-            right: highWallX
+            low: lowEaveX
         },
         edgeRoles: {
             intake: {
@@ -169,6 +180,12 @@ function createShedRoof({ pitchRise, buildingWidth, overhangDepth, halfBuildingW
                 type: "high-edge",
                 highSide: "right"
             }
+        },
+        edgeClassification: {
+            intakeEdges: ["low-eave"],
+            exhaustEdges: ["high-edge"],
+            ridgeEdges: [],
+            sideEdges: ["front-rake", "rear-rake"]
         },
         edgeReferenceX: {
             intake: lowEaveX,
@@ -292,13 +309,17 @@ function createAtticGeometry({
     const roofHeightAtRightOverhang = roofProfile.roofHeightAtRightOverhang;
     const ridgeX = roofProfile.ridgeX;
     const ridgeY = roofProfile.ridgeY;
+    const exhaustReferenceX = roofProfile.exhaustReferenceX ?? ridgeX;
+    const exhaustReferenceY = roofProfile.exhaustReferenceY ?? ridgeY;
     currentGeometryParams.roofEdgeRoles = roofProfile.edgeRoles || null;
+    currentGeometryParams.edgeClassification = roofProfile.edgeClassification || null;
     currentGeometryParams.primaryIntakeReference = roofProfile.roofType === "shed"
         ? "intakeEdgeLine"
         : "leftIntakePlacement";
     currentGeometryParams.primaryExhaustReference = roofProfile.roofType === "shed"
         ? "exhaustEdgeLine"
         : "ridgeCenterLine";
+    currentGeometryParams.hasRidge = Boolean(roofProfile.hasRidge);
 
     // Keep compatibility with existing return shape
     const roofHeightAtBuildingEdge = Math.max(roofHeightAtBuildingEdgeLeft, roofHeightAtBuildingEdgeRight);
@@ -380,14 +401,20 @@ function createAtticGeometry({
         const lowSideChannelHeight = Math.max(plenumHeight, 0.28);
         const highSideChannelHeight = Math.max(plenumHeight, 0.32);
         const lowEaveX = -(halfBuildingWidth + overhangDepth);
+        const lowOuterTopY = roofHeightAtLeftOverhang;
+        const lowInnerTopY = roofHeightAtBuildingEdgeLeft;
+        const lowOuterBottomY = Math.max(0, lowOuterTopY - lowSideChannelHeight);
+        const lowInnerBottomY = Math.max(0, lowInnerTopY - lowSideChannelHeight);
         const highWallChannelInset = Math.max(Math.min(overhangDepth * 0.2, 0.35), 0.16);
         const highWallInnerX = halfBuildingWidth - highWallChannelInset;
-        const highWallInnerY = roofHeightAtBuildingEdgeRight - (Math.tan(roofSlopeAngle) * highWallChannelInset);
+        const highWallInnerY = roofHeightAtBuildingEdgeRight - (Math.tan(roofProfile.roofSlopeAngle) * highWallChannelInset);
 
-        leftPlenumShape.moveTo(lowEaveX, 0);
-        leftPlenumShape.lineTo(-halfBuildingWidth, 0);
-        leftPlenumShape.lineTo(-halfBuildingWidth, lowSideChannelHeight);
-        leftPlenumShape.lineTo(lowEaveX, lowSideChannelHeight);
+        // Build Shed low-side intake as a wedge under the overhang segment,
+        // anchored to the low building edge rather than treated as body span.
+        leftPlenumShape.moveTo(lowEaveX, lowOuterBottomY);
+        leftPlenumShape.lineTo(-halfBuildingWidth, lowInnerBottomY);
+        leftPlenumShape.lineTo(-halfBuildingWidth, lowInnerTopY);
+        leftPlenumShape.lineTo(lowEaveX, lowOuterTopY);
         leftPlenumShape.closePath();
 
         rightPlenumShape.moveTo(highWallInnerX, highWallInnerY - highSideChannelHeight);
@@ -416,9 +443,6 @@ function createAtticGeometry({
     const leftPlenumGeometry = new THREE.ExtrudeGeometry(leftPlenumShape, extrudeSettings);
     leftPlenumGeometry.translate(0, 0, -buildingLength / 2);
 
-    const rightPlenumGeometry = new THREE.ExtrudeGeometry(rightPlenumShape, extrudeSettings);
-    rightPlenumGeometry.translate(0, 0, -buildingLength / 2);
-
     const plenumMaterial = new THREE.MeshStandardMaterial({
         color: 0x2255ff,
         transparent: true,
@@ -427,69 +451,118 @@ function createAtticGeometry({
         depthWrite: false
     });
 
-    leftPlenum = new THREE.Mesh(leftPlenumGeometry, plenumMaterial);
-    leftPlenum.name = "leftPlenum";
-    atticSystem.add(leftPlenum);
+    intakePlenum = new THREE.Mesh(leftPlenumGeometry, plenumMaterial);
+    intakePlenum.name = roofProfile.roofType === "shed" ? "intakePlenum" : "leftPlenum";
+    atticSystem.add(intakePlenum);
 
     const leftPlenumEdges = new THREE.EdgesGeometry(leftPlenumGeometry);
     const leftPlenumEdgeLines = new THREE.LineSegments(
         leftPlenumEdges,
         new THREE.LineBasicMaterial({ color: 0xffffff })
     );
-    leftPlenum.add(leftPlenumEdgeLines);
+    intakePlenum.add(leftPlenumEdgeLines);
 
-    rightPlenum = new THREE.Mesh(rightPlenumGeometry, plenumMaterial);
-    rightPlenum.name = "rightPlenum";
-    atticSystem.add(rightPlenum);
+    if (roofProfile.roofType === "shed") {
+        leftPlenum = null;
+        rightPlenum = null;
+    } else {
+        leftPlenum = intakePlenum;
+        const rightPlenumGeometry = new THREE.ExtrudeGeometry(rightPlenumShape, extrudeSettings);
+        rightPlenumGeometry.translate(0, 0, -buildingLength / 2);
 
-    const rightPlenumEdges = new THREE.EdgesGeometry(rightPlenumGeometry);
-    const rightPlenumEdgeLines = new THREE.LineSegments(
-        rightPlenumEdges,
-        new THREE.LineBasicMaterial({ color: 0xffffff })
-    );
-    rightPlenum.add(rightPlenumEdgeLines);
+        rightPlenum = new THREE.Mesh(rightPlenumGeometry, plenumMaterial);
+        rightPlenum.name = "rightPlenum";
+        atticSystem.add(rightPlenum);
+
+        const rightPlenumEdges = new THREE.EdgesGeometry(rightPlenumGeometry);
+        const rightPlenumEdgeLines = new THREE.LineSegments(
+            rightPlenumEdges,
+            new THREE.LineBasicMaterial({ color: 0xffffff })
+        );
+        rightPlenum.add(rightPlenumEdgeLines);
+    }
 
     // --------------------------------------------------
     // 4. Intake placement references (underside centerlines)
     // --------------------------------------------------
-    const leftIntakeX = roofProfile.intakePlacementX?.left ?? -(halfBuildingWidth + (overhangDepth / 2));
-    const rightIntakeX = roofProfile.intakePlacementX?.right ?? (halfBuildingWidth + (overhangDepth / 2));
-    const intakeY = 0.02;
+    let intakeY = 0.02;
+    let intakeEdgeReferenceX = roofProfile.edgeReferenceX?.intake
+        ?? (roofProfile.intakePlacementX?.low ?? roofProfile.intakePlacementX?.left ?? -(halfBuildingWidth + (overhangDepth / 2)));
 
-    const leftIntakePoints = [
-        new THREE.Vector3(leftIntakeX, intakeY, -buildingLength / 2),
-        new THREE.Vector3(leftIntakeX, intakeY, buildingLength / 2)
-    ];
-    const rightIntakePoints = [
-        new THREE.Vector3(rightIntakeX, intakeY, -buildingLength / 2),
-        new THREE.Vector3(rightIntakeX, intakeY, buildingLength / 2)
-    ];
+    if (roofProfile.roofType === "shed") {
+        const shedPlenumProfile = leftPlenumShape.getPoints();
+        if (shedPlenumProfile.length) {
+            // Anchor Shed intake reference to the centerline of the low-side intake zone.
+            const minX = shedPlenumProfile.reduce(
+                (currentMin, point) => Math.min(currentMin, point.x),
+                Number.POSITIVE_INFINITY
+            );
+            const maxX = shedPlenumProfile.reduce(
+                (currentMax, point) => Math.max(currentMax, point.x),
+                Number.NEGATIVE_INFINITY
+            );
+            intakeEdgeReferenceX = (minX + maxX) / 2;
 
-    leftIntakePlacement = new THREE.Line(
-        new THREE.BufferGeometry().setFromPoints(leftIntakePoints),
-        new THREE.LineBasicMaterial({ color: 0x66f7ff })
-    );
-    leftIntakePlacement.name = "leftIntakePlacement";
-    atticSystem.add(leftIntakePlacement);
+            const leftEdgePoints = shedPlenumProfile.filter((point) => Math.abs(point.x - minX) < 0.0001);
+            const rightEdgePoints = shedPlenumProfile.filter((point) => Math.abs(point.x - maxX) < 0.0001);
 
-    rightIntakePlacement = new THREE.Line(
-        new THREE.BufferGeometry().setFromPoints(rightIntakePoints),
-        new THREE.LineBasicMaterial({ color: 0x66f7ff })
-    );
-    rightIntakePlacement.name = "rightIntakePlacement";
-    atticSystem.add(rightIntakePlacement);
+            if (leftEdgePoints.length && rightEdgePoints.length) {
+                const leftTopY = leftEdgePoints.reduce((maxY, point) => Math.max(maxY, point.y), Number.NEGATIVE_INFINITY);
+                const rightTopY = rightEdgePoints.reduce((maxY, point) => Math.max(maxY, point.y), Number.NEGATIVE_INFINITY);
+                const leftBottomY = leftEdgePoints.reduce((minY, point) => Math.min(minY, point.y), Number.POSITIVE_INFINITY);
+                const rightBottomY = rightEdgePoints.reduce((minY, point) => Math.min(minY, point.y), Number.POSITIVE_INFINITY);
 
-    const intakeEdgeReferenceX = roofProfile.edgeReferenceX?.intake ?? leftIntakeX;
+                const spanX = Math.max(0.0001, maxX - minX);
+                const t = (intakeEdgeReferenceX - minX) / spanX;
+                const topYAtCenter = leftTopY + ((rightTopY - leftTopY) * t);
+                const bottomYAtCenter = leftBottomY + ((rightBottomY - leftBottomY) * t);
+
+                intakeY = ((topYAtCenter + bottomYAtCenter) / 2) + 0.02;
+            }
+        }
+    }
     const intakeEdgePoints = [
-        new THREE.Vector3(intakeEdgeReferenceX, 0.02, -buildingLength / 2),
-        new THREE.Vector3(intakeEdgeReferenceX, 0.02, buildingLength / 2)
+        new THREE.Vector3(intakeEdgeReferenceX, intakeY, -buildingLength / 2),
+        new THREE.Vector3(intakeEdgeReferenceX, intakeY, buildingLength / 2)
     ];
+
     intakeEdgeLine = new THREE.Line(
         new THREE.BufferGeometry().setFromPoints(intakeEdgePoints),
         new THREE.LineBasicMaterial({ color: 0x66f7ff })
     );
     intakeEdgeLine.name = "intakeEdgeLine";
     atticSystem.add(intakeEdgeLine);
+
+    if (roofProfile.roofType === "shed") {
+        leftIntakePlacement = null;
+        rightIntakePlacement = null;
+    } else {
+        const leftIntakeX = roofProfile.intakePlacementX?.left ?? -(halfBuildingWidth + (overhangDepth / 2));
+        const rightIntakeX = roofProfile.intakePlacementX?.right ?? (halfBuildingWidth + (overhangDepth / 2));
+
+        const leftIntakePoints = [
+            new THREE.Vector3(leftIntakeX, intakeY, -buildingLength / 2),
+            new THREE.Vector3(leftIntakeX, intakeY, buildingLength / 2)
+        ];
+        const rightIntakePoints = [
+            new THREE.Vector3(rightIntakeX, intakeY, -buildingLength / 2),
+            new THREE.Vector3(rightIntakeX, intakeY, buildingLength / 2)
+        ];
+
+        leftIntakePlacement = new THREE.Line(
+            new THREE.BufferGeometry().setFromPoints(leftIntakePoints),
+            new THREE.LineBasicMaterial({ color: 0x66f7ff })
+        );
+        leftIntakePlacement.name = "leftIntakePlacement";
+        atticSystem.add(leftIntakePlacement);
+
+        rightIntakePlacement = new THREE.Line(
+            new THREE.BufferGeometry().setFromPoints(rightIntakePoints),
+            new THREE.LineBasicMaterial({ color: 0x66f7ff })
+        );
+        rightIntakePlacement.name = "rightIntakePlacement";
+        atticSystem.add(rightIntakePlacement);
+    }
 
     // --------------------------------------------------
     // 5. Static exhaust placement zones (3 ft downslope)
@@ -536,24 +609,24 @@ function createAtticGeometry({
         const outerDy = Math.sin(roofSlopeAngle) * outerDepth;
 
         const innerNear = new THREE.Vector3(
-            ridgeX - innerDx,
-            ridgeY - innerDy,
+            exhaustReferenceX - innerDx,
+            exhaustReferenceY - innerDy,
             -buildingLength / 2
         );
         const innerFar = new THREE.Vector3(
-            ridgeX - innerDx,
-            ridgeY - innerDy,
+            exhaustReferenceX - innerDx,
+            exhaustReferenceY - innerDy,
             buildingLength / 2
         );
 
         const outerNear = new THREE.Vector3(
-            ridgeX - outerDx,
-            ridgeY - outerDy,
+            exhaustReferenceX - outerDx,
+            exhaustReferenceY - outerDy,
             -buildingLength / 2
         );
         const outerFar = new THREE.Vector3(
-            ridgeX - outerDx,
-            ridgeY - outerDy,
+            exhaustReferenceX - outerDx,
+            exhaustReferenceY - outerDy,
             buildingLength / 2
         );
 
@@ -580,76 +653,108 @@ function createAtticGeometry({
         depthWrite: false
     });
 
-    const leftExhaustGeometry = roofProfile.roofType === "shed"
-        ? createShedExhaustZoneGeometry(roofProfile.exhaustBands.left.inner, roofProfile.exhaustBands.left.outer)
-        : createGableExhaustZoneGeometry(-1);
-    const rightExhaustGeometry = roofProfile.roofType === "shed"
-        ? createShedExhaustZoneGeometry(roofProfile.exhaustBands.right.inner, roofProfile.exhaustBands.right.outer)
-        : createGableExhaustZoneGeometry(1);
+    if (roofProfile.roofType === "shed") {
+        const highExhaustGeometry = createShedExhaustZoneGeometry(
+            roofProfile.exhaustBands.high.inner,
+            roofProfile.exhaustBands.high.outer
+        );
 
-    leftExhaustZone = new THREE.Mesh(leftExhaustGeometry, exhaustZoneMaterial.clone());
-    leftExhaustZone.name = "leftExhaustZone";
-    atticSystem.add(leftExhaustZone);
+        leftExhaustZone = new THREE.Mesh(highExhaustGeometry, exhaustZoneMaterial.clone());
+        leftExhaustZone.name = "leftExhaustZone";
+        atticSystem.add(leftExhaustZone);
 
-    rightExhaustZone = new THREE.Mesh(rightExhaustGeometry, exhaustZoneMaterial.clone());
-    rightExhaustZone.name = "rightExhaustZone";
-    atticSystem.add(rightExhaustZone);
+        rightExhaustZone = leftExhaustZone;
+    } else {
+        const leftExhaustGeometry = createGableExhaustZoneGeometry(-1);
+        const rightExhaustGeometry = createGableExhaustZoneGeometry(1);
+
+        leftExhaustZone = new THREE.Mesh(leftExhaustGeometry, exhaustZoneMaterial.clone());
+        leftExhaustZone.name = "leftExhaustZone";
+        atticSystem.add(leftExhaustZone);
+
+        rightExhaustZone = new THREE.Mesh(rightExhaustGeometry, exhaustZoneMaterial.clone());
+        rightExhaustZone.name = "rightExhaustZone";
+        atticSystem.add(rightExhaustZone);
+    }
 
     // --------------------------------------------------
     // 5.5 Static vent placement lines (centered in 3-foot zones)
     // --------------------------------------------------
     // Placement lines are centered downslope from ridge/high-side reference
-    const leftStaticDx = Math.cos(roofSlopeAngle) * roofProfile.staticPlacement.leftDownslope;
-    const leftStaticDy = Math.sin(roofSlopeAngle) * roofProfile.staticPlacement.leftDownslope;
-    const rightStaticDx = Math.cos(roofSlopeAngle) * roofProfile.staticPlacement.rightDownslope;
-    const rightStaticDy = Math.sin(roofSlopeAngle) * roofProfile.staticPlacement.rightDownslope;
+    if (roofProfile.roofType === "shed") {
+        const exhaustStaticDx = Math.cos(roofSlopeAngle) * roofProfile.staticPlacement.exhaustDownslope;
+        const exhaustStaticDy = Math.sin(roofSlopeAngle) * roofProfile.staticPlacement.exhaustDownslope;
+        const exhaustStaticX = exhaustReferenceX - exhaustStaticDx;
+        const exhaustStaticY = exhaustReferenceY - exhaustStaticDy;
 
-    const leftStaticX = ridgeX - leftStaticDx;
-    const rightStaticX = roofProfile.roofType === "shed" ? ridgeX - rightStaticDx : ridgeX + rightStaticDx;
-    const leftStaticY = ridgeY - leftStaticDy;
-    const rightStaticY = ridgeY - rightStaticDy;
+        const exhaustStaticPlacementPoints = [
+            new THREE.Vector3(exhaustStaticX, exhaustStaticY, -buildingLength / 2),
+            new THREE.Vector3(exhaustStaticX, exhaustStaticY, buildingLength / 2)
+        ];
 
-    const leftStaticPlacementPoints = [
-        new THREE.Vector3(leftStaticX, leftStaticY, -buildingLength / 2),
-        new THREE.Vector3(leftStaticX, leftStaticY, buildingLength / 2)
-    ];
-    const rightStaticPlacementPoints = [
-        new THREE.Vector3(rightStaticX, rightStaticY, -buildingLength / 2),
-        new THREE.Vector3(rightStaticX, rightStaticY, buildingLength / 2)
-    ];
+        leftStaticPlacementLine = new THREE.Line(
+            new THREE.BufferGeometry().setFromPoints(exhaustStaticPlacementPoints),
+            new THREE.LineBasicMaterial({ color: 0xff8c42, linewidth: 2 })
+        );
+        leftStaticPlacementLine.name = "leftStaticPlacementLine";
+        atticSystem.add(leftStaticPlacementLine);
 
-    leftStaticPlacementLine = new THREE.Line(
-        new THREE.BufferGeometry().setFromPoints(leftStaticPlacementPoints),
-        new THREE.LineBasicMaterial({ color: 0xff8c42, linewidth: 2 })
-    );
-    leftStaticPlacementLine.name = "leftStaticPlacementLine";
-    atticSystem.add(leftStaticPlacementLine);
+        rightStaticPlacementLine = leftStaticPlacementLine;
+    } else {
+        const leftStaticDx = Math.cos(roofSlopeAngle) * roofProfile.staticPlacement.leftDownslope;
+        const leftStaticDy = Math.sin(roofSlopeAngle) * roofProfile.staticPlacement.leftDownslope;
+        const rightStaticDx = Math.cos(roofSlopeAngle) * roofProfile.staticPlacement.rightDownslope;
+        const rightStaticDy = Math.sin(roofSlopeAngle) * roofProfile.staticPlacement.rightDownslope;
 
-    rightStaticPlacementLine = new THREE.Line(
-        new THREE.BufferGeometry().setFromPoints(rightStaticPlacementPoints),
-        new THREE.LineBasicMaterial({ color: 0xff8c42, linewidth: 2 })
-    );
-    rightStaticPlacementLine.name = "rightStaticPlacementLine";
-    atticSystem.add(rightStaticPlacementLine);
+        const leftStaticX = ridgeX - leftStaticDx;
+        const rightStaticX = ridgeX + rightStaticDx;
+        const leftStaticY = ridgeY - leftStaticDy;
+        const rightStaticY = ridgeY - rightStaticDy;
+
+        const leftStaticPlacementPoints = [
+            new THREE.Vector3(leftStaticX, leftStaticY, -buildingLength / 2),
+            new THREE.Vector3(leftStaticX, leftStaticY, buildingLength / 2)
+        ];
+        const rightStaticPlacementPoints = [
+            new THREE.Vector3(rightStaticX, rightStaticY, -buildingLength / 2),
+            new THREE.Vector3(rightStaticX, rightStaticY, buildingLength / 2)
+        ];
+
+        leftStaticPlacementLine = new THREE.Line(
+            new THREE.BufferGeometry().setFromPoints(leftStaticPlacementPoints),
+            new THREE.LineBasicMaterial({ color: 0xff8c42, linewidth: 2 })
+        );
+        leftStaticPlacementLine.name = "leftStaticPlacementLine";
+        atticSystem.add(leftStaticPlacementLine);
+
+        rightStaticPlacementLine = new THREE.Line(
+            new THREE.BufferGeometry().setFromPoints(rightStaticPlacementPoints),
+            new THREE.LineBasicMaterial({ color: 0xff8c42, linewidth: 2 })
+        );
+        rightStaticPlacementLine.name = "rightStaticPlacementLine";
+        atticSystem.add(rightStaticPlacementLine);
+    }
 
     // --------------------------------------------------
     // 6. Ridge centerline reference
     // --------------------------------------------------
-    const ridgePoints = [
-        new THREE.Vector3(ridgeX, ridgeY + 0.01, -buildingLength / 2),
-        new THREE.Vector3(ridgeX, ridgeY + 0.01, buildingLength / 2)
-    ];
-    ridgeCenterLine = new THREE.Line(
-        new THREE.BufferGeometry().setFromPoints(ridgePoints),
-        new THREE.LineBasicMaterial({ color: 0xffe347 })
-    );
-    ridgeCenterLine.name = "ridgeCenterLine";
-    atticSystem.add(ridgeCenterLine);
+    if (roofProfile.hasRidge) {
+        const ridgePoints = [
+            new THREE.Vector3(ridgeX, ridgeY + 0.01, -buildingLength / 2),
+            new THREE.Vector3(ridgeX, ridgeY + 0.01, buildingLength / 2)
+        ];
+        ridgeCenterLine = new THREE.Line(
+            new THREE.BufferGeometry().setFromPoints(ridgePoints),
+            new THREE.LineBasicMaterial({ color: 0xffe347 })
+        );
+        ridgeCenterLine.name = "ridgeCenterLine";
+        atticSystem.add(ridgeCenterLine);
+    } else {
+        ridgeCenterLine = null;
+    }
 
     const exhaustEdgeReferenceX = roofProfile.edgeReferenceX?.exhaust ?? ridgeX;
-    const exhaustEdgeReferenceY = roofProfile.roofType === "shed"
-        ? roofHeightAtBuildingEdgeRight + 0.01
-        : ridgeY + 0.01;
+    const exhaustEdgeReferenceY = roofProfile.hasRidge ? (ridgeY + 0.01) : ((exhaustReferenceY ?? roofHeightAtBuildingEdgeRight) + 0.01);
     const exhaustEdgePoints = [
         new THREE.Vector3(exhaustEdgeReferenceX, exhaustEdgeReferenceY, -buildingLength / 2),
         new THREE.Vector3(exhaustEdgeReferenceX, exhaustEdgeReferenceY, buildingLength / 2)
@@ -661,11 +766,36 @@ function createAtticGeometry({
     exhaustEdgeLine.name = "exhaustEdgeLine";
     atticSystem.add(exhaustEdgeLine);
 
+    intakeZones = {
+        primary: roofProfile.roofType === "shed" ? intakePlenum : null,
+        legacy: roofProfile.roofType === "shed" ? [intakePlenum] : [leftPlenum, rightPlenum]
+    };
+
+    placementReferences = {
+        intake: roofProfile.roofType === "shed"
+            ? { primary: intakeEdgeLine }
+            : { primary: leftIntakePlacement, secondary: rightIntakePlacement, legacy: [leftIntakePlacement, rightIntakePlacement] },
+        exhaust: roofProfile.roofType === "shed"
+            ? { primary: exhaustEdgeLine, zone: leftExhaustZone, legacy: [leftStaticPlacementLine] }
+            : { primary: leftStaticPlacementLine, secondary: rightStaticPlacementLine, ridge: ridgeCenterLine, legacy: [leftStaticPlacementLine, rightStaticPlacementLine] },
+        ridge: roofProfile.hasRidge ? ridgeCenterLine : null
+    };
+
+    edgeClassification = {
+        roofType: roofProfile.roofType,
+        intakeEdges: roofProfile.edgeClassification?.intakeEdges || [],
+        exhaustEdges: roofProfile.edgeClassification?.exhaustEdges || [],
+        ridgeEdges: roofProfile.edgeClassification?.ridgeEdges || [],
+        sideEdges: roofProfile.edgeClassification?.sideEdges || []
+    };
+
     return {
+        roofType: roofProfile.roofType,
         atticSystem,
         buildingFootprintBase,
         roofEnvelope,
         atticCore,
+        intakePlenum,
         leftPlenum,
         rightPlenum,
         leftIntakePlacement,
@@ -677,6 +807,9 @@ function createAtticGeometry({
         ridgeCenterLine,
         intakeEdgeLine,
         exhaustEdgeLine,
+        intakeZones,
+        placementReferences,
+        edgeClassification,
         atticHeight,
         roofHeightAtBuildingEdge,
         roofWidth
@@ -689,6 +822,7 @@ function getGeometryState() {
         buildingFootprintBase,
         roofEnvelope,
         atticCore,
+        intakePlenum,
         leftPlenum,
         rightPlenum,
         leftIntakePlacement,
@@ -700,6 +834,9 @@ function getGeometryState() {
         ridgeCenterLine,
         intakeEdgeLine,
         exhaustEdgeLine,
+        intakeZones,
+        placementReferences,
+        edgeClassification,
         atticHeight,
         currentGeometryParams
     };
@@ -712,6 +849,7 @@ export {
     buildingFootprintBase,
     roofEnvelope,
     atticCore,
+    intakePlenum,
     leftPlenum,
     rightPlenum,
     leftIntakePlacement,
@@ -723,5 +861,8 @@ export {
     ridgeCenterLine,
     intakeEdgeLine,
     exhaustEdgeLine,
+    intakeZones,
+    placementReferences,
+    edgeClassification,
     atticHeight
 };

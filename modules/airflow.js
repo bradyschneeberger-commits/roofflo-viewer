@@ -707,8 +707,26 @@ function getAtticBounds() {
   const halfWidth = buildingWidth / 2;
   const halfLength = buildingLength / 2;
   const atticHeight = geometry.atticHeight || 1;
+  const roofType = params.roofType || "gable";
 
-  return { halfWidth, halfLength, atticHeight };
+  return { halfWidth, halfLength, atticHeight, roofType };
+}
+
+function getAirflowRoofType() {
+  if (!getGeometryStateRef) {
+    return "gable";
+  }
+
+  const geometry = getGeometryStateRef();
+  return geometry?.currentGeometryParams?.roofType || "gable";
+}
+
+function getIntakeInwardDirection(source) {
+  if (getAirflowRoofType() === "shed") {
+    return 1;
+  }
+
+  return source?.side === "left" ? 1 : -1;
 }
 
 function getVentilationMode(ventState) {
@@ -858,7 +876,7 @@ function applyIntakeInfluence(particle, desired, deltaTime, ventState, flowProfi
     return { nearestIntake, intakeInfluence: 0 };
   }
 
-  const inwardDirection = nearestIntake.vent.side === "left" ? 1 : -1;
+  const inwardDirection = getIntakeInwardDirection(nearestIntake.vent);
   const inwardPush = new THREE.Vector3(
     inwardDirection * (0.18 + (flowProfile.intakeDrive * 0.3)),
     0.08 + (flowProfile.intakeDrive * 0.16),
@@ -990,7 +1008,7 @@ function getRandomPointInsideAttic(bounds) {
   const zPadding = 0.3;
   const x = THREE.MathUtils.lerp(-bounds.halfWidth + xPadding, bounds.halfWidth - xPadding, Math.random());
   const z = THREE.MathUtils.lerp(-bounds.halfLength + zPadding, bounds.halfLength - zPadding, Math.random());
-  const roofLimit = getRoofLimitY(x, bounds.halfWidth, bounds.atticHeight);
+  const roofLimit = getRoofLimitY(x, bounds.halfWidth, bounds.atticHeight, bounds.roofType);
   const maxY = Math.max(0.2, roofLimit - 0.08);
   const y = THREE.MathUtils.lerp(0.06, maxY, Math.random());
   return new THREE.Vector3(x, y, z);
@@ -1174,9 +1192,14 @@ function enforceParticlePopulationLimit() {
   }
 }
 
-function getRoofLimitY(x, halfWidth, atticHeight) {
+function getRoofLimitY(x, halfWidth, atticHeight, roofType = "gable") {
   if (halfWidth <= 0) {
     return atticHeight;
+  }
+
+  if (roofType === "shed") {
+    const normalized = THREE.MathUtils.clamp((x + halfWidth) / (halfWidth * 2), 0, 1);
+    return atticHeight * normalized;
   }
 
   const normalized = Math.min(1, Math.abs(x) / halfWidth);
@@ -1198,7 +1221,7 @@ function confineToAttic(particle, bounds) {
     bounds.halfWidth - padding
   );
 
-  const roofLimit = getRoofLimitY(particle.position.x, bounds.halfWidth, bounds.atticHeight);
+  const roofLimit = getRoofLimitY(particle.position.x, bounds.halfWidth, bounds.atticHeight, bounds.roofType);
   particle.position.y = THREE.MathUtils.clamp(particle.position.y, 0.03, Math.max(0.2, roofLimit - 0.06));
 }
 
@@ -1226,7 +1249,7 @@ function getRandomIntakeSpawnPosition(intakeVent) {
 }
 
 function createParticleFromIntakeVent(intakeVent) {
-  const inwardDirection = intakeVent.side === "left" ? 1 : -1;
+  const inwardDirection = getIntakeInwardDirection(intakeVent);
   const startPosition = getRandomIntakeSpawnPosition(intakeVent);
   startPosition.x += inwardDirection * 0.16;
   startPosition.y += 0.04;
@@ -1350,7 +1373,7 @@ function updateSetupModeParticle(particle, deltaTime, bounds) {
 }
 
 function updateIntakePhase(particle, deltaTime, bounds, ventState, flowProfile) {
-  const inwardDirection = particle.side === "left" ? 1 : -1;
+  const inwardDirection = getIntakeInwardDirection(particle);
   const inwardStrength = (simulationRunning ? 0.95 : 0.42) * (0.7 + (flowProfile.intakeDrive * 0.4));
   const upwardStrength = (simulationRunning ? 0.34 : 0.16) * (0.75 + (flowProfile.directionalStrength * 0.35));
   const lateralStrength = (simulationRunning ? 0.1 : 0.24) * (0.9 + (flowProfile.chaosStrength * 0.25));
@@ -1371,9 +1394,11 @@ function updateIntakePhase(particle, deltaTime, bounds, ventState, flowProfile) 
     particle.freshness = Math.min(1, (particle.freshness ?? 1) + (deltaTime * 0.2));
   }
 
-  const nearAtticEdge = particle.side === "left"
+  const nearAtticEdge = bounds.roofType === "shed"
     ? particle.position.x >= -bounds.halfWidth + 0.18
-    : particle.position.x <= bounds.halfWidth - 0.18;
+    : (particle.side === "left"
+      ? particle.position.x >= -bounds.halfWidth + 0.18
+      : particle.position.x <= bounds.halfWidth - 0.18);
   if (nearAtticEdge) {
     particle.phase = "attic";
     particle.targetExhaust = null;

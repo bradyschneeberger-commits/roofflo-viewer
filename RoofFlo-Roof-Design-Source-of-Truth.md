@@ -4,39 +4,37 @@
 
 This document defines how each roof type in RoofFlo should behave so new roof designs can be added without re-fighting old geometry, preset, and ventilation assumptions.
 
-Its purpose is to create a clean contract for every roof type so that:
+Its purpose is to create a clean, scalable contract for every roof type so that:
 
 - geometry is modular  
 - defaults are intentional  
 - intake and exhaust logic are roof-specific  
-- presets do not accidentally reuse the wrong assumptions  
-- future roof types can be added consistently  
+- presets do not reuse incorrect assumptions  
+- complex roofs can be supported in the future  
 
-This document should guide:
+This document governs:
 - geometry.js  
-- roof selection flow  
-- setup defaults  
-- placement references  
+- airflow behavior  
+- placement system  
 - preset routing  
-- future airflow behavior  
-- future report logic  
+- report logic (future)  
 
 ---
 
 ## 2. Core Principle
 
-RoofFlo should never treat all roof types as variations of gable.
+RoofFlo must never treat all roof types as variations of gable.
 
-Instead, every roof type must define its own:
+Each roof type must define its own:
 
-- structural shape rules  
+- geometry  
 - edge classification  
-- intake assumptions  
-- exhaust assumptions  
+- intake behavior  
+- exhaust behavior  
 - default dimensions  
-- preset behavior expectations  
+- preset behavior  
 
-Gable may be the first roof type, but it is not the universal template.
+RoofFlo is a system of independent roof models.
 
 ---
 
@@ -54,28 +52,24 @@ Inputs:
 - ventilationRule  
 
 Rebuild behavior:
-- geometry must rebuild cleanly on input change  
+- geometry must rebuild cleanly  
 - no duplicate meshes  
-- no stale geometry left in scene  
-- switching roof type must fully replace old geometry and references  
+- no stale objects  
+- switching roof types replaces all references  
 
 Footprint rule:
-- attic area calculations are based on building footprint, not overhangs  
-
-Overhang rule:
-- overhangs must be intentional per roof type  
-- overhang behavior cannot be blindly mirrored  
+- attic calculations use building footprint only  
 
 Pitch rule:
-- pitch is rise / 12  
-- must be applied across the correct span for that roof type  
+- pitch = rise / 12  
+- must apply across correct span  
 
 Visual rule:
-- each roof type must read clearly and believably from default camera  
+- roof must read correctly on load  
 
 Architecture rule:
-- each roof type must function independently  
-- presets and placement must route directly to that roof type  
+- all roof types operate independently  
+- no shared assumptions between roof types  
 
 ---
 
@@ -98,8 +92,9 @@ Edge Classification:
 - intakeEdges  
 - exhaustEdges  
 - ridgeEdges  
+- hipEdges (if present)  
+- valleyEdges (if present)  
 - sideEdges  
-- wallEdges (future)  
 
 Ventilation Assumptions:
 - where intake occurs  
@@ -108,9 +103,9 @@ Ventilation Assumptions:
 - whether symmetry applies  
 
 Placement References:
-- intake placement reference  
-- exhaust placement reference  
-- ridge reference (if valid)  
+- intake placement references  
+- exhaust placement references  
+- ridge references (if valid)  
 
 Preset Behavior:
 - Intake Only  
@@ -118,7 +113,7 @@ Preset Behavior:
 - Balanced  
 
 Camera Intent:
-- how the roof should be framed by default  
+- correct visual framing  
 
 ---
 
@@ -142,7 +137,7 @@ switch (roofType) {
     return createHipRoof(params);
 }
 
-Each roof should return:
+Each roof must return:
 
 {
   roofType,
@@ -155,7 +150,38 @@ Each roof should return:
 
 ---
 
-## 6. Roof Type: Gable
+## 6. Edge Segmentation Rule (CRITICAL)
+
+RoofFlo must NOT assume a fixed number of intake or exhaust edges.
+
+Instead, all roofs must define **edge segments**.
+
+Edge segments represent real roof edges such as:
+- eaves  
+- ridges  
+- hips  
+- valleys  
+- wall terminations  
+
+Each roof must return collections such as:
+
+intakeEdges: []
+exhaustEdges: []
+ridgeEdges: []
+hipEdges: []
+valleyEdges: []
+
+Simple roofs may have:
+- 1–4 intake edges
+
+Complex roofs may have:
+- many intake edges (bump-outs, additions, intersections)
+
+This allows RoofFlo to scale beyond simple shapes.
+
+---
+
+## 7. Roof Type: Gable
 
 Identity:
 - two slopes  
@@ -163,28 +189,27 @@ Identity:
 - mirrored  
 
 Defaults:
-- Width: 30 ft  
-- Length: 50 ft  
-- Pitch: 6/12  
+- 30 ft width  
+- 50 ft length  
+- 6/12 pitch  
 
-Edge Classification:
-- intake: both eaves  
-- exhaust: upper slopes / ridge  
-- ridge: center  
+Edges:
+- intakeEdges: two eaves  
+- exhaustEdges: upper slopes / ridge  
+- ridgeEdges: center  
 
 Ventilation:
 - intake both sides  
 - exhaust near ridge  
-- ridge logic valid  
 
 Presets:
 - Intake Only → both eaves  
-- Exhaust Only → upper slopes / ridge  
+- Exhaust Only → ridge / upper slopes  
 - Balanced → both  
 
 ---
 
-## 7. Roof Type: Shed
+## 8. Roof Type: Shed
 
 Identity:
 - one slope  
@@ -192,129 +217,155 @@ Identity:
 - no symmetry  
 
 Defaults:
-- Width: 20 ft  
-- Length: 40 ft  
-- Pitch: 4/12  
+- 20 ft width  
+- 40 ft length  
+- 4/12 pitch  
 
-Edge Classification:
-- intake: low side  
-- exhaust: high side  
-- ridge: none  
+Edges:
+- intakeEdges: low eave (single)  
+- exhaustEdges: high edge  
+- ridgeEdges: none  
 
 Ventilation:
 - intake at low side  
 - exhaust at high side  
+
+Critical Rules:
 - no ridge logic  
 - no mirrored logic  
+- no dual intake system  
 
 Presets:
 - Intake Only → low side  
 - Exhaust Only → high side  
 - Balanced → low + high  
 
-Critical Rule:
-Shed must NEVER:
-- use ridge assumptions  
-- use mirrored slope logic  
-- treat high edge as eave  
-
 ---
 
-## 8. Roof Type: Hip
+## 9. Roof Type: Hip
 
 Identity:
 - four slopes  
 - short ridge or apex  
 
 Defaults:
-- Width: 30 ft  
-- Length: 50 ft  
-- Pitch: 6/12  
+- 30 ft width  
+- 50 ft length  
+- 6/12 pitch  
 
-Edge Classification:
-- intake: perimeter  
-- exhaust: upper hip areas  
+Edges:
+- intakeEdges: perimeter eaves  
+- hipEdges: all hip lines  
+- ridgeEdges: short ridge if present  
 
 Ventilation:
-- perimeter intake  
-- complex exhaust strategy  
+- intake from all eaves  
+- exhaust strategy varies  
 
 ---
 
-## 9. Preset Routing Rules
+## 10. Preset Routing Rules
 
-if (roofType === "gable") applyGablePreset();
-if (roofType === "shed") applyShedPreset();
-if (roofType === "hip") applyHipPreset();
+Presets must branch by roofType:
 
-Rule:
-- presets must not fall back to gable logic  
+if (roofType === "gable") applyGablePreset()
+if (roofType === "shed") applyShedPreset()
+if (roofType === "hip") applyHipPreset()
+
+Rules:
+- no fallback to gable logic  
+- each roof type must define its own behavior  
 
 ---
 
-## 10. Placement Reference Rules
+## 11. Placement Reference Rules
+
+Placement must be based on edge roles, not left/right assumptions.
+
+Examples:
 
 Gable:
-- dual intake  
-- ridge reference  
+- two intake edges  
 
 Shed:
-- single intake (low)  
-- single exhaust (high)  
+- one intake edge  
 
 Hip:
-- perimeter intake  
-- distributed exhaust  
+- multiple perimeter intake edges  
+
+All placement systems must use edge collections, not fixed variables.
 
 ---
 
-## 11. Camera Rules
+## 12. Camera Rules
 
 Gable:
-- centered  
+- centered view  
 
 Shed:
 - emphasize slope direction  
 
 Hip:
-- show full form  
+- show full roof mass  
 
 ---
 
-## 12. State / UI Rules
+## 13. State / UI Rules
 
-- roof selection sets initial state  
+- roof selection defines roofType  
 - setup panel reflects roofType  
 - switching roofType rebuilds everything  
 
 ---
 
-## 13. Future Constraints (Parked)
+## 14. Exhaust Placement Restriction Rule
 
-Shed to Wall:
-- alters exhaust behavior  
+Exhaust vents must NOT be placed on:
 
-Vaulted Ceiling:
-- removes attic assumptions  
+- hip edges  
+- valley edges  
 
-Future Roofs:
-- gambrel  
-- mansard  
-- multi-level  
+This applies to:
+- static vents  
+- ridge vents  
+- turbine vents  
+- power fans  
+- all future exhaust types  
+
+Rules:
+- hips are restricted placement regions  
+- valleys are restricted placement regions  
+- placement system must block these areas  
+- invalid placement should be visually indicated  
+
+NOTE:
+This rule is defined now but will be enforced when edge classification is fully implemented.
 
 ---
 
-## 14. Implementation Order
+## 15. Future Constraints (Parked)
+
+- shed roof terminating into wall  
+- vaulted / cathedral ceilings  
+- complex multi-roof systems  
+- dormers  
+- intersecting roof planes  
+
+---
+
+## 16. Implementation Order
 
 1. finalize architecture  
 2. stabilize gable  
 3. refactor shed  
-4. fix presets per roof type  
-5. build hip  
+4. make airflow roof-type aware  
+5. implement hip  
+6. expand placement system  
+7. expand report logic  
 
 ---
 
-## 15. Final Rule
+## 17. Final Rule
 
 Do not adapt gable.
 
@@ -322,40 +373,39 @@ Define the roof.
 
 ---
 
-## 16. Roof-Type Isolation Rule (CRITICAL)
+## 18. Roof-Type Isolation Rule (CRITICAL)
 
-Each roof type must be implemented as a fully independent system.
+Each roof type must be implemented independently.
 
 Rules:
-- No roof type may inherit geometry logic from another  
-- No roof type may reuse placement logic without explicit mapping  
-- No roof type may fall back to gable assumptions  
-- Each roof type must define its own:
-  - geometry  
-  - edge classification  
-  - intake logic  
-  - exhaust logic  
-  - preset behavior  
+- no shared geometry logic  
+- no shared intake/exhaust assumptions  
+- no fallback to gable behavior  
+
+Each roof must define:
+- geometry  
+- edge classification  
+- intake logic  
+- exhaust logic  
+- preset behavior  
 
 Prohibited:
 
-if (roofType !== "gable") {
-  useGableLogic();
-}
+if (roofType !== "gable") useGableLogic()
 
-const exhaustEdges = gableExhaustEdges;
+const exhaustEdges = gableExhaustEdges
 
-fallbackToGableBehavior();
+fallbackToGableBehavior()
 
 Required:
 
 switch (roofType) {
   case "gable":
-    return handleGable();
+    return handleGable()
   case "shed":
-    return handleShed();
+    return handleShed()
   case "hip":
-    return handleHip();
+    return handleHip()
 }
 
 Philosophy:
