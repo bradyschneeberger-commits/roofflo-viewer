@@ -902,12 +902,18 @@ function createAtticGeometry({
 
         placementReferences = {
             intake: {
+                targets: perimeterIntakeReferences.map((reference) => ({
+                    key: reference.name,
+                    line: reference
+                })),
                 perimeter: perimeterIntakeReferences,
                 legacy: []
             },
             exhaust: {
                 primary: ridgeCenterLine,
                 ridge: ridgeCenterLine,
+                targets: [],
+                zones: [],
                 legacy: []
             },
             ridge: ridgeCenterLine
@@ -1402,11 +1408,49 @@ function createAtticGeometry({
 
     placementReferences = {
         intake: roofProfile.roofType === "shed"
-            ? { primary: intakeEdgeLine }
-            : { primary: leftIntakePlacement, secondary: rightIntakePlacement, legacy: [leftIntakePlacement, rightIntakePlacement] },
+            ? {
+                primary: intakeEdgeLine,
+                targets: intakeEdgeLine ? [{ key: "low", line: intakeEdgeLine }] : []
+            }
+            : {
+                primary: leftIntakePlacement,
+                secondary: rightIntakePlacement,
+                targets: [
+                    leftIntakePlacement ? { key: "left", line: leftIntakePlacement } : null,
+                    rightIntakePlacement ? { key: "right", line: rightIntakePlacement } : null
+                ].filter(Boolean),
+                legacy: [leftIntakePlacement, rightIntakePlacement]
+            },
         exhaust: roofProfile.roofType === "shed"
-            ? { primary: exhaustEdgeLine, zone: leftExhaustZone, legacy: [leftStaticPlacementLine] }
-            : { primary: leftStaticPlacementLine, secondary: rightStaticPlacementLine, ridge: ridgeCenterLine, legacy: [leftStaticPlacementLine, rightStaticPlacementLine] },
+            ? {
+                primary: exhaustEdgeLine,
+                zone: leftExhaustZone,
+                targets: [
+                    leftStaticPlacementLine && leftExhaustZone
+                        ? { key: "high", line: leftStaticPlacementLine, zone: leftExhaustZone }
+                        : null,
+                    rightStaticPlacementLine && rightExhaustZone
+                        ? { key: "high", line: rightStaticPlacementLine, zone: rightExhaustZone }
+                        : null
+                ].filter(Boolean),
+                zones: [leftExhaustZone, rightExhaustZone].filter(Boolean),
+                legacy: [leftStaticPlacementLine]
+            }
+            : {
+                primary: leftStaticPlacementLine,
+                secondary: rightStaticPlacementLine,
+                ridge: ridgeCenterLine,
+                targets: [
+                    leftStaticPlacementLine && leftExhaustZone
+                        ? { key: "left", line: leftStaticPlacementLine, zone: leftExhaustZone }
+                        : null,
+                    rightStaticPlacementLine && rightExhaustZone
+                        ? { key: "right", line: rightStaticPlacementLine, zone: rightExhaustZone }
+                        : null
+                ].filter(Boolean),
+                zones: [leftExhaustZone, rightExhaustZone].filter(Boolean),
+                legacy: [leftStaticPlacementLine, rightStaticPlacementLine]
+            },
         ridge: roofProfile.hasRidge ? ridgeCenterLine : null
     };
 
