@@ -33,6 +33,12 @@ import { scene } from "./scene.js";
 import { getGeometryState } from "./geometry.js";
 import { validateRoofType } from "../main.js";
 import {
+	getRoofTypeCapabilities,
+	isPlacementModeSupported,
+	isPresetSupported,
+	isRestoreFeatureSupported
+} from "./roofCapabilities.js";
+import {
 	calculateAtticArea,
 	calculateRequiredVentilation,
 	calculateRequiredIntake,
@@ -381,6 +387,11 @@ function updateVentPreview(pointerNdc, camera, placementMode) {
 		return;
 	}
 
+	if (!isPlacementModeSupported(routing.roofType, placementMode, { hasRidgeReference: Boolean(routing.ridgeLine) })) {
+		hideVentPreview();
+		return;
+	}
+
 	setRayFromPointer(camera, pointerNdc);
 
 	if (placementMode === "intake") {
@@ -486,9 +497,11 @@ function getPlacementRoutingContract() {
 	const intakeTargets = resolveIntakeTargets(placementReferences.intake, roofType);
 	const staticTargets = resolveStaticTargets(placementReferences.exhaust, roofType);
 	const ridgeLine = placementReferences.ridge || placementReferences.exhaust?.ridge || null;
+	const capabilities = getRoofTypeCapabilities(roofType);
 
 	return {
 		roofType,
+		capabilities,
 		intakeTargets,
 		staticTargets,
 		ridgeLine
@@ -679,6 +692,11 @@ function tryPlaceIntakeVent() {
 		return false;
 	}
 
+	const routing = getPlacementRoutingContract();
+	if (!routing || !isPlacementModeSupported(routing.roofType, "intake", { hasRidgeReference: Boolean(routing.ridgeLine) })) {
+		return false;
+	}
+
 	if (!intakePreviewSnappedPoint || !intakePreviewPlacementLine) {
 		return false;
 	}
@@ -725,12 +743,17 @@ function tryPlaceStaticVent() {
 		return false;
 	}
 
+	const routing = getPlacementRoutingContract();
+	if (!routing || !isPlacementModeSupported(routing.roofType, "static", { hasRidgeReference: Boolean(routing.ridgeLine) })) {
+		return false;
+	}
+
 	if (!staticPreviewSnappedPoint || !staticPreviewNormal || !staticPreviewPlacementLine || !staticPreviewZoneMesh) {
 		return false;
 	}
 
 	// Route manual placement through the shared static transform path.
-	const staticTarget = getPlacementRoutingContract()?.staticTargets.find((target) => (
+	const staticTarget = routing.staticTargets.find((target) => (
 		target.line === staticPreviewPlacementLine && target.zone === staticPreviewZoneMesh
 	));
 
@@ -872,6 +895,11 @@ function createRidgeVentGeometry(startPoint, endPoint) {
 
 function tryPlaceRidgeVent() {
 	if (!currentPreviewIsValid || currentPreviewMode !== "ridge") {
+		return false;
+	}
+
+	const routing = getPlacementRoutingContract();
+	if (!routing || !isPlacementModeSupported(routing.roofType, "ridge", { hasRidgeReference: Boolean(routing.ridgeLine) })) {
 		return false;
 	}
 
@@ -1393,12 +1421,14 @@ function restoreVentLayout(layout) {
 		return false;
 	}
 
-	if (!routing.intakeTargets.length) {
+	const hasRidgeReference = Boolean(routing.ridgeLine);
+	if (isRestoreFeatureSupported(roofType, "intake", { hasRidgeReference }) && !routing.intakeTargets.length) {
 		return false;
 	}
 
 	clearAllVents();
 
+	if (isRestoreFeatureSupported(roofType, "intake", { hasRidgeReference })) {
 	for (const intake of intakeEntries) {
 		if (!Number.isFinite(Number(intake?.z))) {
 			continue;
@@ -1413,7 +1443,9 @@ function restoreVentLayout(layout) {
 			referenceKey: intakeTarget.key
 		});
 	}
+}
 
+	if (isRestoreFeatureSupported(roofType, "static", { hasRidgeReference })) {
 	for (const exhaust of staticEntries) {
 		if (!Number.isFinite(Number(exhaust?.z))) {
 			continue;
@@ -1429,8 +1461,9 @@ function restoreVentLayout(layout) {
 			referenceKey: staticTarget.key
 		});
 	}
+}
 
-	if (roofType !== "shed" && routing.ridgeLine) {
+	if (isRestoreFeatureSupported(roofType, "ridge", { hasRidgeReference })) {
 		const ridgeBounds = getLineZBounds(routing.ridgeLine);
 		for (const ridge of ridgeEntries) {
 			if (!ridgeBounds) {
@@ -1521,6 +1554,9 @@ function applyHipIntakeOnlyPreset() {
 
 function generateIntakeOnlyPreset() {
 	const roofType = getPresetRoofType();
+	if (!roofType || !isPresetSupported(roofType, "intakeOnly")) {
+		return false;
+	}
 
 	if (roofType === "gable") return applyGableIntakeOnlyPreset();
 	if (roofType === "shed") return applyShedIntakeOnlyPreset();
@@ -1592,6 +1628,9 @@ function applyHipExhaustOnlyPreset() {
 
 function generateExhaustOnlyPreset() {
 	const roofType = getPresetRoofType();
+	if (!roofType || !isPresetSupported(roofType, "exhaustOnly")) {
+		return false;
+	}
 
 	if (roofType === "gable") return applyGableExhaustOnlyPreset();
 	if (roofType === "shed") return applyShedExhaustOnlyPreset();
@@ -1816,6 +1855,9 @@ function applyHipBalancedPreset({ ventilationRule = "1/150" } = {}) {
 
 function generateBalancedPreset({ ventilationRule = "1/150" } = {}) {
 	const roofType = getPresetRoofType();
+	if (!roofType || !isPresetSupported(roofType, "balanced")) {
+		return false;
+	}
 
 	if (roofType === "gable") return applyGableBalancedPreset({ ventilationRule });
 	if (roofType === "shed") return applyShedBalancedPreset({ ventilationRule });

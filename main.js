@@ -38,6 +38,10 @@ import {
     updateAirflow,
     isSimulationRunning
 } from "./modules/airflow.js";
+import {
+    isPlacementModeSupported,
+    isPresetSupported
+} from "./modules/roofCapabilities.js";
 
 const SimulationState = {
     IDLE: "IDLE",
@@ -2592,11 +2596,47 @@ function onVentRuleChanged() {
     updateVentStatusMessage();
 }
 
+function getSelectedRoofTypeForCapabilities() {
+    try {
+        return validateRoofType(selectedRoofType);
+    } catch (error) {
+        return null;
+    }
+}
+
+function getPlacementSupportForMode(mode) {
+    const roofType = getSelectedRoofTypeForCapabilities();
+    if (!roofType) {
+        return false;
+    }
+
+    const geometry = getGeometryState();
+    const hasRidgeReference = Boolean(geometry?.placementReferences?.ridge || geometry?.placementReferences?.exhaust?.ridge);
+    return isPlacementModeSupported(roofType, mode, { hasRidgeReference });
+}
+
+function getPresetSupport(presetType) {
+    const roofType = getSelectedRoofTypeForCapabilities();
+    return roofType ? isPresetSupported(roofType, presetType) : false;
+}
+
 function updatePlacementButtonUI() {
     const geometryGateActive = isImportedGeometryGateActive();
     const presentationLocked = isPresentationMode;
+    const intakeSupported = getPlacementSupportForMode("intake");
+    const staticSupported = getPlacementSupportForMode("static");
+    const ridgeSupported = getPlacementSupportForMode("ridge");
+    const intakePresetSupported = getPresetSupport("intakeOnly");
+    const exhaustPresetSupported = getPresetSupport("exhaustOnly");
+    const balancedPresetSupported = getPresetSupport("balanced");
 
-    if (geometryGateActive || presentationLocked) {
+    const modeSupportByPlacement = {
+        [PlacementMode.INTAKE]: intakeSupported,
+        [PlacementMode.STATIC]: staticSupported,
+        [PlacementMode.RIDGE]: ridgeSupported
+    };
+
+    if (geometryGateActive || presentationLocked || !modeSupportByPlacement[activePlacementMode]) {
         activePlacementMode = PlacementMode.NONE;
     }
 
@@ -2606,28 +2646,31 @@ function updatePlacementButtonUI() {
         }
 
         const isActive = item.mode === activePlacementMode;
+        const modeSupported = modeSupportByPlacement[item.mode];
         item.button.classList.toggle("is-active", isActive);
         item.button.setAttribute("aria-pressed", isActive ? "true" : "false");
-        item.button.disabled = simulationState === SimulationState.RUNNING || geometryGateActive || presentationLocked;
+        item.button.disabled = simulationState === SimulationState.RUNNING || geometryGateActive || presentationLocked || !modeSupported;
         item.button.setAttribute("title", presentationLocked
             ? "Exit presentation mode to edit vents"
             : (geometryGateActive
                 ? "Match viewer attic area to imported area before vent placement"
-                : item.button.textContent || "Vent placement"));
+                : (modeSupported
+                    ? (item.button.textContent || "Vent placement")
+                    : "Not supported for selected roof type")));
     }
 
     quickPlacementIntakeButton?.classList.toggle("is-active", activePlacementMode === PlacementMode.INTAKE);
     quickPlacementStaticButton?.classList.toggle("is-active", activePlacementMode === PlacementMode.STATIC);
     quickPlacementRidgeButton?.classList.toggle("is-active", activePlacementMode === PlacementMode.RIDGE);
-    quickPlacementIntakeButton && (quickPlacementIntakeButton.disabled = geometryGateActive || presentationLocked);
-    quickPlacementStaticButton && (quickPlacementStaticButton.disabled = geometryGateActive || presentationLocked);
-    quickPlacementRidgeButton && (quickPlacementRidgeButton.disabled = geometryGateActive || presentationLocked);
-    quickPresetIntakeButton && (quickPresetIntakeButton.disabled = geometryGateActive || presentationLocked);
-    quickPresetExhaustButton && (quickPresetExhaustButton.disabled = geometryGateActive || presentationLocked);
-    quickPresetBalancedButton && (quickPresetBalancedButton.disabled = geometryGateActive || presentationLocked);
-    toolbarIntakeOnlyButton && (toolbarIntakeOnlyButton.disabled = geometryGateActive || presentationLocked);
-    toolbarExhaustOnlyButton && (toolbarExhaustOnlyButton.disabled = geometryGateActive || presentationLocked);
-    toolbarBalancedButton && (toolbarBalancedButton.disabled = geometryGateActive || presentationLocked);
+    quickPlacementIntakeButton && (quickPlacementIntakeButton.disabled = geometryGateActive || presentationLocked || !intakeSupported);
+    quickPlacementStaticButton && (quickPlacementStaticButton.disabled = geometryGateActive || presentationLocked || !staticSupported);
+    quickPlacementRidgeButton && (quickPlacementRidgeButton.disabled = geometryGateActive || presentationLocked || !ridgeSupported);
+    quickPresetIntakeButton && (quickPresetIntakeButton.disabled = geometryGateActive || presentationLocked || !intakePresetSupported);
+    quickPresetExhaustButton && (quickPresetExhaustButton.disabled = geometryGateActive || presentationLocked || !exhaustPresetSupported);
+    quickPresetBalancedButton && (quickPresetBalancedButton.disabled = geometryGateActive || presentationLocked || !balancedPresetSupported);
+    toolbarIntakeOnlyButton && (toolbarIntakeOnlyButton.disabled = geometryGateActive || presentationLocked || !intakePresetSupported);
+    toolbarExhaustOnlyButton && (toolbarExhaustOnlyButton.disabled = geometryGateActive || presentationLocked || !exhaustPresetSupported);
+    toolbarBalancedButton && (toolbarBalancedButton.disabled = geometryGateActive || presentationLocked || !balancedPresetSupported);
 
     const viewer = renderer.domElement;
     const isPlacementActive =
@@ -2715,6 +2758,12 @@ function setPlacementMode(mode) {
 
     if (isImportedGeometryGateActive()) {
         revealGeometryGateGuidance();
+        return;
+    }
+
+    if (!getPlacementSupportForMode(mode)) {
+        activePlacementMode = PlacementMode.NONE;
+        updatePlacementButtonUI();
         return;
     }
 
@@ -2910,7 +2959,7 @@ function onResetClicked() {
     updateVentStatusMessage({ forceReveal: true });
 }
 
-function applyToolbarPreset(generator, source = "preset") {
+function applyToolbarPreset(generator, source = "preset", presetType = null) {
     if (typeof generator !== "function") {
         return;
     }
@@ -2921,6 +2970,10 @@ function applyToolbarPreset(generator, source = "preset") {
 
     if (isImportedGeometryGateActive()) {
         revealGeometryGateGuidance();
+        return;
+    }
+
+    if (presetType && !getPresetSupport(presetType)) {
         return;
     }
 
@@ -3032,9 +3085,9 @@ statusIndicatorButton?.addEventListener("blur", hideStatusPopover);
 statusIndicatorButton?.addEventListener("click", onStatusIndicatorClicked);
 toolbarSaveCurrentButton?.addEventListener("click", onSaveCurrentLayoutClicked);
 toolbarRestoreCurrentButton?.addEventListener("click", onRestoreCurrentLayoutClicked);
-toolbarIntakeOnlyButton?.addEventListener("click", () => applyToolbarPreset(generateIntakeOnlyPreset, "preset"));
-toolbarExhaustOnlyButton?.addEventListener("click", () => applyToolbarPreset(generateExhaustOnlyPreset, "preset"));
-toolbarBalancedButton?.addEventListener("click", () => applyToolbarPreset(() => generateBalancedPreset({ ventilationRule: selectedVentilationRule }), "preset"));
+toolbarIntakeOnlyButton?.addEventListener("click", () => applyToolbarPreset(generateIntakeOnlyPreset, "preset", "intakeOnly"));
+toolbarExhaustOnlyButton?.addEventListener("click", () => applyToolbarPreset(generateExhaustOnlyPreset, "preset", "exhaustOnly"));
+toolbarBalancedButton?.addEventListener("click", () => applyToolbarPreset(() => generateBalancedPreset({ ventilationRule: selectedVentilationRule }), "preset", "balanced"));
 toolbarGridToggleButton?.addEventListener("click", onGridToggleClicked);
 toolbarStartButton?.addEventListener("click", onStartSimulationClicked);
 toolbarResetButton?.addEventListener("click", onResetClicked);
@@ -3055,9 +3108,9 @@ compactPresetsButton?.addEventListener("click", handleCompactPresetsIconClick);
 quickPlacementIntakeButton?.addEventListener("click", () => runCompactPlacementAction(PlacementMode.INTAKE));
 quickPlacementStaticButton?.addEventListener("click", () => runCompactPlacementAction(PlacementMode.STATIC));
 quickPlacementRidgeButton?.addEventListener("click", () => runCompactPlacementAction(PlacementMode.RIDGE));
-quickPresetIntakeButton?.addEventListener("click", () => runCompactPresetAction(generateIntakeOnlyPreset, "preset"));
-quickPresetExhaustButton?.addEventListener("click", () => runCompactPresetAction(generateExhaustOnlyPreset, "preset"));
-quickPresetBalancedButton?.addEventListener("click", () => runCompactPresetAction(() => generateBalancedPreset({ ventilationRule: selectedVentilationRule }), "preset"));
+quickPresetIntakeButton?.addEventListener("click", () => applyToolbarPreset(generateIntakeOnlyPreset, "preset", "intakeOnly"));
+quickPresetExhaustButton?.addEventListener("click", () => applyToolbarPreset(generateExhaustOnlyPreset, "preset", "exhaustOnly"));
+quickPresetBalancedButton?.addEventListener("click", () => applyToolbarPreset(() => generateBalancedPreset({ ventilationRule: selectedVentilationRule }), "preset", "balanced"));
 presentationResumeButton?.addEventListener("click", onPresentationResumeClicked);
 presentationBackButton?.addEventListener("click", onPresentationBackClicked);
 presentationNextButton?.addEventListener("click", onPresentationNextClicked);
