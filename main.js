@@ -207,6 +207,12 @@ let hasInitializedViewerGeometry = false;
 let hasExplicitRoofTypeSelection = false;
 let pendingViewerEntryAfterSelection = null;
 
+const ROOF_TYPE_GEOMETRY_DEFAULTS = {
+    gable: { width: 30, length: 50, pitch: 6 },
+    hip: { width: 30, length: 50, pitch: 6 },
+    shed: { width: 20, length: 40, pitch: 4 }
+};
+
 const roofOverlayParticleState = {
     layer: null,
     canvas: null,
@@ -359,6 +365,60 @@ const TAP_MOVE_THRESHOLD = 10;
 function toNumber(value, fallback) {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function getGeometryDefaultsForRoofType(roofType) {
+    return ROOF_TYPE_GEOMETRY_DEFAULTS[roofType] || ROOF_TYPE_GEOMETRY_DEFAULTS.gable;
+}
+
+function getCurrentGeometryInputValues() {
+    const fallbackDefaults = getGeometryDefaultsForRoofType(selectedRoofType);
+
+    return {
+        width: Math.max(1, toNumber(houseWidthInput?.value, fallbackDefaults.width)),
+        length: Math.max(1, toNumber(houseLengthInput?.value, fallbackDefaults.length)),
+        pitch: Math.max(1, toNumber(roofPitchRiseInput?.value, fallbackDefaults.pitch))
+    };
+}
+
+function applyGeometryInputValues({ width, length, pitch }) {
+    if (houseWidthInput) {
+        houseWidthInput.value = String(width);
+    }
+
+    if (houseLengthInput) {
+        houseLengthInput.value = String(length);
+    }
+
+    if (roofPitchRiseInput) {
+        roofPitchRiseInput.value = String(pitch);
+    }
+}
+
+function geometryInputsMatchDefaults(roofType) {
+    const defaults = getGeometryDefaultsForRoofType(roofType);
+    const current = getCurrentGeometryInputValues();
+
+    return current.width === defaults.width
+        && current.length === defaults.length
+        && current.pitch === defaults.pitch;
+}
+
+function applyRoofTypeDefaultsIfAppropriate(nextRoofType, { force = false, previousRoofType = selectedRoofType } = {}) {
+    if (nextRoofType !== "shed") {
+        return false;
+    }
+
+    const shouldApply = force
+        || !hasInitializedViewerGeometry
+        || geometryInputsMatchDefaults(previousRoofType);
+
+    if (!shouldApply) {
+        return false;
+    }
+
+    applyGeometryInputValues(getGeometryDefaultsForRoofType(nextRoofType));
+    return true;
 }
 
 function isGeometryDependentTab(tab) {
@@ -3735,6 +3795,10 @@ function hideRoofSelectionOverlay({ immediate = false } = {}) {
 }
 
 function onRoofTypeSelected(roofType) {
+    applyRoofTypeDefaultsIfAppropriate(roofType, {
+        force: roofType === "shed",
+        previousRoofType: selectedRoofType
+    });
     selectedRoofType = roofType;
     hasExplicitRoofTypeSelection = true;
     syncRoofTypeSelectUI();
@@ -4081,9 +4145,14 @@ calcCopyResultsButton?.addEventListener("click", onCopyQuickResults);
 calcShareResultsButton?.addEventListener("click", onShareQuickResults);
 btnCalcOpenViewer?.addEventListener("click", openViewerFromCalculator);
 roofTypeSelect?.addEventListener("change", () => {
+    const previousRoofType = selectedRoofType;
     selectedRoofType = roofTypeSelect.value;
     hasExplicitRoofTypeSelection = true;
     currentLayoutSource = "manual";
+
+    applyRoofTypeDefaultsIfAppropriate(selectedRoofType, {
+        previousRoofType
+    });
 
     if (hasInitializedViewerGeometry) {
         rebuildGeometryFromInputs();
