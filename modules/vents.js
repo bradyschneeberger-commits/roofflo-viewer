@@ -1502,6 +1502,45 @@ function getShedManualStaticPlacementTarget() {
 	};
 }
 
+function getIntakeTargetForSide(side) {
+	return getIntakeTargetByStoredData(side, null);
+}
+
+function getStaticTargetForSide(side) {
+	return getStaticTargetByStoredSide(side, null);
+}
+
+function placeIntakeVentsForTarget(target, positions) {
+	if (!target?.line || !Array.isArray(positions) || !positions.length) {
+		return;
+	}
+
+	for (const z of positions) {
+		placeIntakeVentAt(target.line, z, {
+			side: target.side,
+			referenceKey: target.key
+		});
+	}
+}
+
+function placeStaticVentsForTarget(target, positions) {
+	if (!target?.line || !target?.zone || !Array.isArray(positions) || !positions.length) {
+		return 0;
+	}
+
+	let placedCount = 0;
+	for (const z of positions) {
+		if (placeStaticVentAt(target.line, target.zone, z, {
+			side: target.side,
+			referenceKey: target.key
+		})) {
+			placedCount += 1;
+		}
+	}
+
+	return placedCount;
+}
+
 function applyGableIntakeOnlyPreset() {
 	const routing = getPlacementRoutingContract();
 	if (!routing || routing.roofType !== "gable" || routing.intakeTargets.length < 2) {
@@ -1510,8 +1549,8 @@ function applyGableIntakeOnlyPreset() {
 
 	clearAllVents();
 
-	const leftTarget = routing.intakeTargets.find((target) => target.side === "left") || routing.intakeTargets[0];
-	const rightTarget = routing.intakeTargets.find((target) => target.side === "right") || routing.intakeTargets[1];
+	const leftTarget = getIntakeTargetForSide("left") || routing.intakeTargets[0];
+	const rightTarget = getIntakeTargetForSide("right") || routing.intakeTargets[1];
 
 	if (!leftTarget?.line || !rightTarget?.line) {
 		return false;
@@ -1520,8 +1559,8 @@ function applyGableIntakeOnlyPreset() {
 	const leftPositions = createLineSampleZ(leftTarget.line, 10, 1.2);
 	const rightPositions = createLineSampleZ(rightTarget.line, 10, 1.2);
 
-	leftPositions.forEach((z) => placeIntakeVentAt(leftTarget.line, z, { side: leftTarget.side, referenceKey: leftTarget.key }));
-	rightPositions.forEach((z) => placeIntakeVentAt(rightTarget.line, z, { side: rightTarget.side, referenceKey: rightTarget.key }));
+	placeIntakeVentsForTarget(leftTarget, leftPositions);
+	placeIntakeVentsForTarget(rightTarget, rightPositions);
 
 	cancelPendingRidgePlacement();
 	hideVentPreview();
@@ -1530,7 +1569,7 @@ function applyGableIntakeOnlyPreset() {
 
 function applyShedIntakeOnlyPreset() {
 	const routing = getPlacementRoutingContract();
-	const intakeTarget = routing?.intakeTargets?.[0] || null;
+	const intakeTarget = getIntakeTargetForSide("low") || routing?.intakeTargets?.[0] || null;
 	if (!routing || routing.roofType !== "shed" || !intakeTarget?.line) {
 		return false;
 	}
@@ -1538,10 +1577,7 @@ function applyShedIntakeOnlyPreset() {
 	clearAllVents();
 
 	const lowSidePositions = createLineSampleZ(intakeTarget.line, 10, 1.2);
-	lowSidePositions.forEach((z) => placeIntakeVentAt(intakeTarget.line, z, {
-		side: intakeTarget.side,
-		referenceKey: intakeTarget.key
-	}));
+	placeIntakeVentsForTarget(intakeTarget, lowSidePositions);
 
 	cancelPendingRidgePlacement();
 	hideVentPreview();
@@ -1558,11 +1594,13 @@ function generateIntakeOnlyPreset() {
 		return false;
 	}
 
-	if (roofType === "gable") return applyGableIntakeOnlyPreset();
-	if (roofType === "shed") return applyShedIntakeOnlyPreset();
-	if (roofType === "hip") return applyHipIntakeOnlyPreset();
+	const applierByRoofType = {
+		gable: applyGableIntakeOnlyPreset,
+		shed: applyShedIntakeOnlyPreset,
+		hip: applyHipIntakeOnlyPreset
+	};
 
-	return false;
+	return applierByRoofType[roofType]?.() ?? false;
 }
 
 function applyGableExhaustOnlyPreset() {
@@ -1571,7 +1609,7 @@ function applyGableExhaustOnlyPreset() {
 		return false;
 	}
 
-	const staticTarget = routing.staticTargets.find((target) => target.side === "left") || routing.staticTargets[0] || null;
+	const staticTarget = getStaticTargetForSide("left") || routing.staticTargets[0] || null;
 
 	clearAllVents();
 
@@ -1585,14 +1623,9 @@ function applyGableExhaustOnlyPreset() {
 
 	if (!placedExhaust && staticTarget?.line && staticTarget?.zone) {
 		const fallbackPositions = createEvenlySpacedZForCount(staticTarget.line, 2, 1.5, STATIC_SIZE_FEET * 0.9);
-		fallbackPositions.forEach((z) => {
-			if (placeStaticVentAt(staticTarget.line, staticTarget.zone, z, {
-				side: staticTarget.side,
-				referenceKey: staticTarget.key
-			})) {
-				placedExhaust = true;
-			}
-		});
+		if (placeStaticVentsForTarget(staticTarget, fallbackPositions) > 0) {
+			placedExhaust = true;
+		}
 	}
 
 	cancelPendingRidgePlacement();
@@ -1601,21 +1634,19 @@ function applyGableExhaustOnlyPreset() {
 }
 
 function applyShedExhaustOnlyPreset() {
-	const { line: highSideLine, zone: highSideZone, side: highSideSide, referenceKey: highSideReferenceKey } = getShedManualStaticPlacementTarget();
+	const staticTarget = getStaticTargetForSide("high") || getShedManualStaticPlacementTarget();
 
-	if (!highSideLine || !highSideZone) {
+	if (!staticTarget?.line || !staticTarget?.zone) {
 		return false;
 	}
 
 	clearAllVents();
 
 	let placedExhaust = false;
-	const fallbackPositions = createEvenlySpacedZForCount(highSideLine, 4, 1.5, STATIC_SIZE_FEET * 0.9);
-	fallbackPositions.forEach((z) => {
-		if (placeStaticVentAt(highSideLine, highSideZone, z, { side: highSideSide, referenceKey: highSideReferenceKey })) {
-			placedExhaust = true;
-		}
-	});
+	const fallbackPositions = createEvenlySpacedZForCount(staticTarget.line, 4, 1.5, STATIC_SIZE_FEET * 0.9);
+	if (placeStaticVentsForTarget(staticTarget, fallbackPositions) > 0) {
+		placedExhaust = true;
+	}
 
 	cancelPendingRidgePlacement();
 	hideVentPreview();
@@ -1632,11 +1663,13 @@ function generateExhaustOnlyPreset() {
 		return false;
 	}
 
-	if (roofType === "gable") return applyGableExhaustOnlyPreset();
-	if (roofType === "shed") return applyShedExhaustOnlyPreset();
-	if (roofType === "hip") return applyHipExhaustOnlyPreset();
+	const applierByRoofType = {
+		gable: applyGableExhaustOnlyPreset,
+		shed: applyShedExhaustOnlyPreset,
+		hip: applyHipExhaustOnlyPreset
+	};
 
-	return false;
+	return applierByRoofType[roofType]?.() ?? false;
 }
 
 function applyGableBalancedPreset({ ventilationRule = "1/150" } = {}) {
@@ -1647,10 +1680,10 @@ function applyGableBalancedPreset({ ventilationRule = "1/150" } = {}) {
 		return false;
 	}
 
-	const leftIntakeTarget = routing.intakeTargets.find((target) => target.side === "left") || routing.intakeTargets[0] || null;
-	const rightIntakeTarget = routing.intakeTargets.find((target) => target.side === "right") || routing.intakeTargets[1] || null;
-	const leftStaticTarget = routing.staticTargets.find((target) => target.side === "left") || routing.staticTargets[0] || null;
-	const rightStaticTarget = routing.staticTargets.find((target) => target.side === "right") || routing.staticTargets[1] || null;
+	const leftIntakeTarget = getIntakeTargetForSide("left") || routing.intakeTargets[0] || null;
+	const rightIntakeTarget = getIntakeTargetForSide("right") || routing.intakeTargets[1] || null;
+	const leftStaticTarget = getStaticTargetForSide("left") || routing.staticTargets[0] || null;
+	const rightStaticTarget = getStaticTargetForSide("right") || routing.staticTargets[1] || null;
 
 	if (!leftIntakeTarget?.line || !rightIntakeTarget?.line || !leftStaticTarget?.line || !rightStaticTarget?.line) {
 		return false;
@@ -1758,14 +1791,8 @@ function applyGableBalancedPreset({ ventilationRule = "1/150" } = {}) {
 		intakeMinSpacing
 	);
 
-	intakeLeft.forEach((z) => placeIntakeVentAt(leftIntakeTarget.line, z, {
-		side: leftIntakeTarget.side,
-		referenceKey: leftIntakeTarget.key
-	}));
-	intakeRight.forEach((z) => placeIntakeVentAt(rightIntakeTarget.line, z, {
-		side: rightIntakeTarget.side,
-		referenceKey: rightIntakeTarget.key
-	}));
+	placeIntakeVentsForTarget(leftIntakeTarget, intakeLeft);
+	placeIntakeVentsForTarget(rightIntakeTarget, intakeRight);
 
 	if (bestLayout.staticCount > 0) {
 		const staticPositions = createEvenlySpacedZForCount(
@@ -1775,10 +1802,7 @@ function applyGableBalancedPreset({ ventilationRule = "1/150" } = {}) {
 			staticMinSpacing
 		);
 
-		staticPositions.forEach((z) => placeStaticVentAt(preferredStaticLine, preferredStaticZone, z, {
-			side: preferredStaticTarget.side,
-			referenceKey: preferredStaticTarget.key
-		}));
+		placeStaticVentsForTarget(preferredStaticTarget, staticPositions);
 	}
 
 	if (bestLayout.ridgeLength > 0.01) {
@@ -1802,10 +1826,10 @@ function applyGableBalancedPreset({ ventilationRule = "1/150" } = {}) {
 function applyShedBalancedPreset({ ventilationRule = "1/150" } = {}) {
 	const { currentGeometryParams } = getGeometryState();
 	const routing = getPlacementRoutingContract();
-	const intakeTarget = routing?.intakeTargets?.[0] || null;
-	const { line: exhaustStaticLine, zone: exhaustStaticZone, side: exhaustSide, referenceKey: exhaustReferenceKey } = getShedManualStaticPlacementTarget();
+	const intakeTarget = getIntakeTargetForSide("low") || routing?.intakeTargets?.[0] || null;
+	const exhaustTarget = getStaticTargetForSide("high") || getShedManualStaticPlacementTarget();
 
-	if (!currentGeometryParams || !routing || routing.roofType !== "shed" || !intakeTarget?.line || !exhaustStaticLine || !exhaustStaticZone) {
+	if (!currentGeometryParams || !routing || routing.roofType !== "shed" || !intakeTarget?.line || !exhaustTarget?.line || !exhaustTarget?.zone) {
 		return false;
 	}
 
@@ -1829,20 +1853,14 @@ function applyShedBalancedPreset({ ventilationRule = "1/150" } = {}) {
 		INTAKE_LENGTH_FEET * 0.9
 	);
 	const exhaustPositions = createEvenlySpacedZForCount(
-		exhaustStaticLine,
+		exhaustTarget.line,
 		staticCount,
 		1.5,
 		STATIC_SIZE_FEET * 0.9
 	);
 
-	intakePositions.forEach((z) => placeIntakeVentAt(intakeTarget.line, z, {
-		side: intakeTarget.side,
-		referenceKey: intakeTarget.key
-	}));
-	exhaustPositions.forEach((z) => placeStaticVentAt(exhaustStaticLine, exhaustStaticZone, z, {
-		side: exhaustSide,
-		referenceKey: exhaustReferenceKey
-	}));
+	placeIntakeVentsForTarget(intakeTarget, intakePositions);
+	placeStaticVentsForTarget(exhaustTarget, exhaustPositions);
 
 	cancelPendingRidgePlacement();
 	hideVentPreview();
@@ -1859,11 +1877,13 @@ function generateBalancedPreset({ ventilationRule = "1/150" } = {}) {
 		return false;
 	}
 
-	if (roofType === "gable") return applyGableBalancedPreset({ ventilationRule });
-	if (roofType === "shed") return applyShedBalancedPreset({ ventilationRule });
-	if (roofType === "hip") return applyHipBalancedPreset({ ventilationRule });
+	const applierByRoofType = {
+		gable: () => applyGableBalancedPreset({ ventilationRule }),
+		shed: () => applyShedBalancedPreset({ ventilationRule }),
+		hip: () => applyHipBalancedPreset({ ventilationRule })
+	};
 
-	return false;
+	return applierByRoofType[roofType]?.() ?? false;
 }
 
 export {
