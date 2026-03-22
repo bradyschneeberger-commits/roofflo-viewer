@@ -1541,13 +1541,12 @@ function placeStaticVentsForTarget(target, positions) {
 	return placedCount;
 }
 
-function applyGableIntakeOnlyPreset() {
+function applyGableIntakeOnlyPreset({ ventilationRule = "1/150" } = {}) {
+	const { currentGeometryParams } = getGeometryState();
 	const routing = getPlacementRoutingContract();
-	if (!routing || routing.roofType !== "gable" || routing.intakeTargets.length < 2) {
+	if (!currentGeometryParams || !routing || routing.roofType !== "gable" || routing.intakeTargets.length < 2) {
 		return false;
 	}
-
-	clearAllVents();
 
 	const leftTarget = getIntakeTargetForSide("left") || routing.intakeTargets[0];
 	const rightTarget = getIntakeTargetForSide("right") || routing.intakeTargets[1];
@@ -1556,8 +1555,20 @@ function applyGableIntakeOnlyPreset() {
 		return false;
 	}
 
-	const leftPositions = createLineSampleZ(leftTarget.line, 10, 1.2);
-	const rightPositions = createLineSampleZ(rightTarget.line, 10, 1.2);
+	const atticAreaSqFt = calculateAtticArea(
+		currentGeometryParams.buildingWidth,
+		currentGeometryParams.buildingLength
+	);
+	const requiredVentilationIn2 = calculateRequiredVentilation(atticAreaSqFt, ventilationRule);
+	const requiredIntakeIn2 = calculateRequiredIntake(requiredVentilationIn2);
+	const intakeCount = Math.ceil(requiredIntakeIn2 / INTAKE_NFVA_IN2);
+	const intakeSplit = splitCountAcrossSides(intakeCount);
+	const intakeMinSpacing = INTAKE_LENGTH_FEET * 0.9;
+
+	const leftPositions = createEvenlySpacedZForCount(leftTarget.line, intakeSplit.left, 1, intakeMinSpacing);
+	const rightPositions = createEvenlySpacedZForCount(rightTarget.line, intakeSplit.right, 1, intakeMinSpacing);
+
+	clearAllVents();
 
 	placeIntakeVentsForTarget(leftTarget, leftPositions);
 	placeIntakeVentsForTarget(rightTarget, rightPositions);
@@ -1567,16 +1578,25 @@ function applyGableIntakeOnlyPreset() {
 	return true;
 }
 
-function applyShedIntakeOnlyPreset() {
+function applyShedIntakeOnlyPreset({ ventilationRule = "1/150" } = {}) {
+	const { currentGeometryParams } = getGeometryState();
 	const routing = getPlacementRoutingContract();
 	const intakeTarget = getIntakeTargetForSide("low") || routing?.intakeTargets?.[0] || null;
-	if (!routing || routing.roofType !== "shed" || !intakeTarget?.line) {
+	if (!currentGeometryParams || !routing || routing.roofType !== "shed" || !intakeTarget?.line) {
 		return false;
 	}
 
+	const atticAreaSqFt = calculateAtticArea(
+		currentGeometryParams.buildingWidth,
+		currentGeometryParams.buildingLength
+	);
+	const requiredVentilationIn2 = calculateRequiredVentilation(atticAreaSqFt, ventilationRule);
+	const requiredIntakeIn2 = calculateRequiredIntake(requiredVentilationIn2);
+	const intakeCount = Math.ceil(requiredIntakeIn2 / INTAKE_NFVA_IN2);
+
 	clearAllVents();
 
-	const lowSidePositions = createLineSampleZ(intakeTarget.line, 10, 1.2);
+	const lowSidePositions = createEvenlySpacedZForCount(intakeTarget.line, intakeCount, 1, INTAKE_LENGTH_FEET * 0.9);
 	placeIntakeVentsForTarget(intakeTarget, lowSidePositions);
 
 	cancelPendingRidgePlacement();
@@ -1588,41 +1608,59 @@ function applyHipIntakeOnlyPreset() {
 	return false;
 }
 
-function generateIntakeOnlyPreset() {
+function generateIntakeOnlyPreset({ ventilationRule = "1/150" } = {}) {
 	const roofType = getPresetRoofType();
 	if (!roofType || !isPresetSupported(roofType, "intakeOnly")) {
 		return false;
 	}
 
 	const applierByRoofType = {
-		gable: applyGableIntakeOnlyPreset,
-		shed: applyShedIntakeOnlyPreset,
+		gable: () => applyGableIntakeOnlyPreset({ ventilationRule }),
+		shed: () => applyShedIntakeOnlyPreset({ ventilationRule }),
 		hip: applyHipIntakeOnlyPreset
 	};
 
 	return applierByRoofType[roofType]?.() ?? false;
 }
 
-function applyGableExhaustOnlyPreset() {
+function applyGableExhaustOnlyPreset({ ventilationRule = "1/150" } = {}) {
+	const { currentGeometryParams } = getGeometryState();
 	const routing = getPlacementRoutingContract();
-	if (!routing || routing.roofType !== "gable" || !routing.ridgeLine) {
+	if (!currentGeometryParams || !routing || routing.roofType !== "gable" || !routing.ridgeLine) {
 		return false;
 	}
 
 	const staticTarget = getStaticTargetForSide("left") || routing.staticTargets[0] || null;
+
+	const atticAreaSqFt = calculateAtticArea(
+		currentGeometryParams.buildingWidth,
+		currentGeometryParams.buildingLength
+	);
+	const requiredVentilationIn2 = calculateRequiredVentilation(atticAreaSqFt, ventilationRule);
+	const requiredExhaustIn2 = calculateRequiredExhaust(requiredVentilationIn2);
 
 	clearAllVents();
 
 	let placedExhaust = false;
 	const ridgeBounds = getLineZBounds(routing.ridgeLine);
 	if (ridgeBounds) {
-		const ridgeStart = new THREE.Vector3(ridgeBounds.start.x, ridgeBounds.start.y, ridgeBounds.zMin + 1);
-		const ridgeEnd = new THREE.Vector3(ridgeBounds.start.x, ridgeBounds.start.y, ridgeBounds.zMax - 1);
-		placedExhaust = placeRidgeVentSegment(ridgeStart, ridgeEnd);
+		const ridgeInset = 1;
+		const maxRidgeLength = Math.max(0, (ridgeBounds.zMax - ridgeBounds.zMin) - (ridgeInset * 2));
+		const requiredRidgeLength = Math.min(requiredExhaustIn2 / RIDGE_NFVA_PER_FOOT_IN2, maxRidgeLength);
+		const ridgeMid = (ridgeBounds.zMin + ridgeBounds.zMax) / 2;
+		const halfLength = requiredRidgeLength / 2;
+		const ridgeStartZ = THREE.MathUtils.clamp(ridgeMid - halfLength, ridgeBounds.zMin + ridgeInset, ridgeBounds.zMax - ridgeInset);
+		const ridgeEndZ = THREE.MathUtils.clamp(ridgeMid + halfLength, ridgeBounds.zMin + ridgeInset, ridgeBounds.zMax - ridgeInset);
+		if (ridgeEndZ - ridgeStartZ > 0.08) {
+			const ridgeStart = new THREE.Vector3(ridgeBounds.start.x, ridgeBounds.start.y, ridgeStartZ);
+			const ridgeEnd = new THREE.Vector3(ridgeBounds.start.x, ridgeBounds.start.y, ridgeEndZ);
+			placedExhaust = placeRidgeVentSegment(ridgeStart, ridgeEnd);
+		}
 	}
 
 	if (!placedExhaust && staticTarget?.line && staticTarget?.zone) {
-		const fallbackPositions = createEvenlySpacedZForCount(staticTarget.line, 2, 1.5, STATIC_SIZE_FEET * 0.9);
+		const staticCount = Math.max(1, Math.ceil(requiredExhaustIn2 / STATIC_NFVA_IN2));
+		const fallbackPositions = createEvenlySpacedZForCount(staticTarget.line, staticCount, 1.5, STATIC_SIZE_FEET * 0.9);
 		if (placeStaticVentsForTarget(staticTarget, fallbackPositions) > 0) {
 			placedExhaust = true;
 		}
@@ -1633,18 +1671,27 @@ function applyGableExhaustOnlyPreset() {
 	return placedExhaust;
 }
 
-function applyShedExhaustOnlyPreset() {
+function applyShedExhaustOnlyPreset({ ventilationRule = "1/150" } = {}) {
+	const { currentGeometryParams } = getGeometryState();
 	const staticTarget = getStaticTargetForSide("high") || getShedManualStaticPlacementTarget();
 
-	if (!staticTarget?.line || !staticTarget?.zone) {
+	if (!currentGeometryParams || !staticTarget?.line || !staticTarget?.zone) {
 		return false;
 	}
+
+	const atticAreaSqFt = calculateAtticArea(
+		currentGeometryParams.buildingWidth,
+		currentGeometryParams.buildingLength
+	);
+	const requiredVentilationIn2 = calculateRequiredVentilation(atticAreaSqFt, ventilationRule);
+	const requiredExhaustIn2 = calculateRequiredExhaust(requiredVentilationIn2);
+	const staticCount = Math.max(1, Math.ceil(requiredExhaustIn2 / STATIC_NFVA_IN2));
 
 	clearAllVents();
 
 	let placedExhaust = false;
-	const fallbackPositions = createEvenlySpacedZForCount(staticTarget.line, 4, 1.5, STATIC_SIZE_FEET * 0.9);
-	if (placeStaticVentsForTarget(staticTarget, fallbackPositions) > 0) {
+	const exhaustPositions = createEvenlySpacedZForCount(staticTarget.line, staticCount, 1.5, STATIC_SIZE_FEET * 0.9);
+	if (placeStaticVentsForTarget(staticTarget, exhaustPositions) > 0) {
 		placedExhaust = true;
 	}
 
@@ -1657,15 +1704,15 @@ function applyHipExhaustOnlyPreset() {
 	return false;
 }
 
-function generateExhaustOnlyPreset() {
+function generateExhaustOnlyPreset({ ventilationRule = "1/150" } = {}) {
 	const roofType = getPresetRoofType();
 	if (!roofType || !isPresetSupported(roofType, "exhaustOnly")) {
 		return false;
 	}
 
 	const applierByRoofType = {
-		gable: applyGableExhaustOnlyPreset,
-		shed: applyShedExhaustOnlyPreset,
+		gable: () => applyGableExhaustOnlyPreset({ ventilationRule }),
+		shed: () => applyShedExhaustOnlyPreset({ ventilationRule }),
 		hip: applyHipExhaustOnlyPreset
 	};
 
