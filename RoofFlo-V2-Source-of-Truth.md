@@ -1,31 +1,31 @@
 # RoofFlo V3 — Source of Truth
 
-## 🎯 Product Vision
+## Product Vision
 RoofFlo is a visual roofing ventilation sales and design tool that allows contractors to:
 - simulate attic airflow
 - demonstrate ventilation problems
 - present a clear solution
-- convert that into a proposal
+- generate a report/proposal workflow
 
 Goal:
 Turn complex ventilation concepts into a simple, visual sales experience homeowners instantly understand.
 
 --------------------------------------------------
-
-## 🧱 CORE SYSTEMS
+## CORE SYSTEMS
 
 ### 1. Geometry System
-- Generates attic + intake plenum structure
+- Generates roof + attic / airflow structure
 - Inputs:
+  - roofType
   - width
   - length
   - pitch
   - overhang
 - Rules:
   - 1 unit = 1 foot
-  - ridge always centered
-
---------------------------------------------------
+  - building footprint and overhang must be treated separately
+  - roof-type logic must be independent
+  - geometry rebuild must fully replace previous roof-type geometry
 
 ### 2. Vent Placement System
 Supports:
@@ -34,31 +34,25 @@ Supports:
 - Ridge vents
 
 Behavior:
-- Placement constrained to valid zones
-- Static vents snap to alignment (center line)
-- Ridge vents render:
-  - center opening strip
-  - full vent width overlay
-
---------------------------------------------------
+- placement constrained to valid zones
+- placement must use roof-type-specific references
+- manual placement and preset placement must reuse the same final placement/orientation logic
+- no duplicate placement paths that drift apart
 
 ### 3. Simulation System
 - Particle-based airflow visualization
 
 Shows:
-- trapped air (no ventilation)
-- inefficient flow (imbalanced systems)
-- proper airflow (balanced system)
+- trapped air
+- inefficient flow
+- proper airflow
 
-States:
-- idle
-- running
-- reset
+Rules:
+- airflow routing must be roof-type aware
+- no fallback to gable-style intake/exhaust assumptions
+- for Shed, airflow direction is low intake side → high exhaust side
 
---------------------------------------------------
-
-### 4. Snapshot System (CRITICAL)
-
+### 4. Snapshot System
 Snapshots represent complete system states.
 
 Includes:
@@ -67,224 +61,177 @@ Includes:
 - ventilation calculations
 - metadata
 
-#### Snapshot Metadata
-
+Metadata shape:
 {
   role: "current" | "solution" | null,
   solutionType: "balanced" | "upgrade" | null,
   isUserCreated: boolean
 }
 
-#### Slide Structure
-
-{
-  id,
-  label,
-  role,
-  solutionType,
-  isUserCreated,
-  snapshot
-}
-
---------------------------------------------------
-
-### 5. Snapshot Roles (CORE)
-
-Roles define presentation meaning:
-
-- current → homeowner’s existing system
-- solution → recommended system
+### 5. Snapshot Roles
+- current = homeowner existing system
+- solution = recommended system
 
 Rules:
-- Only ONE current snapshot
-- Only ONE solution snapshot
-- New assignment overrides previous
+- only one current snapshot
+- only one solution snapshot
+- new assignment overrides previous
 
 --------------------------------------------------
+## CURRENT WORKFLOWS
 
-### 6. Snapshot UI Workflow
+### Launch / Entry
+- RoofFlo Visualizer is the core product entry
+- Create RoofFlo Report and Quick Calculator are supporting tools
+- entering Visualizer uses roof selection overlay first
+- opening Viewer from Quick Calculator uses the same roof-selection flow
 
-Users can:
-- Add Slide (neutral)
-- Mark as Current
-- Mark as Solution
+### Visualizer Entry
+- roof selection overlay appears before geometry loads
+- roof selection sets roofType
+- setup drawer opens automatically after selection
+- selected roofType syncs into Setup panel
 
-Visual indicators:
-- CURRENT badge
-- SOLUTION badge
+### Workspace UI
+- top action bar is icon-based
+- bottom unified tool drawer includes:
+  - Setup
+  - Vent Placement
+  - Presets
+  - Presentation
 
-Goal:
-No developer tools required to structure presentation
-
---------------------------------------------------
-
-## 🎬 PRESENTATION MODE (CORE FEATURE)
-
-### Step Structure
-
-Step 1
-No ventilation → trapped heat & moisture
-
-Step 2
-Imbalanced system → ineffective
-
-Step 3
-Balanced ventilation concept
-
-Step 4 — CURRENT SYSTEM
-- Loads snapshot with role: "current"
-- Acts as pause / discussion checkpoint
-- No automatic transition
-
-Step 5 — SOLUTION
-
-Single step with internal phases:
+### Setup Drawer
+- Roof Type appears first
+- setup drawer includes a System Overview panel
+- layout is tuned and stable
+- setup values update geometry and system overview correctly
 
 --------------------------------------------------
+## PRESENTATION / REPORT STATE
 
-### Step 5 Internal Phases
+### Presentation Mode
+Implemented:
+- Step 1–3 education
+- Step 4 current system checkpoint
+- Step 5 solution with phased reveal
 
-Phase 5A — Intake Upgrade
-- reveal / replace intake system
+Step 5 phases:
+- 5A intake upgrade
+- 5B exhaust upgrade
+- 5C balanced airflow simulation
 
-Phase 5B — Exhaust Upgrade
-- reveal / replace exhaust system
-
-Phase 5C — Balanced System
-- start simulation
-- show airflow working
-
---------------------------------------------------
-
-### Presentation Behavior Rules
-
-- Do NOT animate vents individually
-- Animate by system groups (intake / exhaust)
-- Keep transitions clean and professional
-- Avoid flashy effects
+### Report
+Current report structure is working:
+- left = verdict / diagnosis
+- right = recommended action
+- current vs solution comparison
+- recommendation/report transition established
 
 --------------------------------------------------
+## CURRENT ROOF STATUS
 
-### Timing
+### Gable
+Working:
+- geometry
+- intake placement
+- static placement
+- ridge placement
+- presets
+- airflow
 
-- Optional delay before Phase 5A (~500–700ms)
-- Intake phase ~1s
-- Exhaust phase ~1s
-- Then simulation starts
+### Shed
+Working:
+- geometry
+- plenum/eave construction
+- intake zone
+- intake placement
+- static placement
+- preset placement
+- airflow direction / routing
+- roof-type-specific exhaust behavior
 
---------------------------------------------------
+Important lessons from Shed:
+- geometry must be corrected before placement is corrected
+- building footprint, roof body, overhang, and plenum must be treated as separate concepts
+- manual and preset placement must share the same final placement logic
+- one-sided roofs cannot reuse left/right assumptions
+- roof-type-specific references must be created before airflow and presets behave correctly
 
-### Camera Behavior
-
-- Uses presentation framing system
-- Slow orbit allowed
-- Stable during transitions
-
---------------------------------------------------
-
-### Navigation
-
-- Back
-- Next
-- Exit
-
-Step 5:
-- runs automatically (no sub-step clicks)
-
---------------------------------------------------
-
-### Fallback Rules
-
-If missing:
-- current snapshot → fallback to current viewer state
-- solution snapshot → fallback to balanced concept
-
-Never:
-- crash
-- break presentation flow
+### Hip
+Not implemented yet.
+Next major roof type.
 
 --------------------------------------------------
+## ROOF-TYPE ARCHITECTURE RULES
 
-## 🧮 CALCULATION SYSTEM
-
-- Calculates required ventilation
-- Calculates installed ventilation
-
-Determines:
-- balanced
-- under-ventilated
-- imbalanced
+- RoofFlo is not a gable system with variations
+- Each roof type must be treated as its own model
+- No roof type may silently fall back to gable logic
+- Geometry, edges, intake logic, exhaust logic, and preset behavior must branch by roofType
+- Placement and airflow must consume roof-type-specific references
 
 --------------------------------------------------
+## PLACEMENT RULES
 
-## 🎯 UX PRINCIPLES
+### Shared
+- valid zones must be roof-type aware
+- final placement transform must be surface-aware
+- mirrored roof surfaces must compute correct outward direction
+- manual and preset placement must not diverge
 
-- Contractor-first workflow
-- Minimal friction
-- Visual clarity over technical detail
-- No unnecessary UI layers
-- Mobile-first considerations
+### Intake
+- intake placement line should snap to the centerline of the intended intake zone
+- not the outside edge unless explicitly designed that way
+- for Shed, intake snaps to the center of the true low intake/eave zone
 
---------------------------------------------------
-
-## 🚀 CURRENT STATE
-
-- Snapshot system supports roles
-- UI supports Current / Solution assignment
-- Presentation Mode uses role-based slides
-- Step 4 + Step 5 implemented
-- Solution phases implemented
-- Timing refinement added
-
-System is now a functional sales tool.
+### Exhaust
+- static vent placement must sit flush on the roof plane
+- static vent placement must project outward, not into the attic
+- preset static vent placement must reuse the same placement logic as manual static vent placement
 
 --------------------------------------------------
+## PARKED / FUTURE RULES
 
-## ⚠️ NEXT PRIORITIES
+These are defined and should not be forgotten:
 
-1. Enforce single current / solution at code level
-2. Minor timing polish (Step 5 pacing)
-3. Proposal / Report screen
-4. Snapshot labeling enhancements
+### Exhaust restriction rule
+Exhaust vents of any kind must NOT be placed on:
+- hips
+- valleys
+
+This applies to:
+- static vents
+- ridge vents
+- turbine vents
+- power fans
+- future exhaust devices
+
+This rule is defined now and should be enforced when edge classification / restricted-edge placement is implemented for complex roofs.
+
+### Future roof-context cases
+- shed roof terminating into a wall
+- vaulted / cathedral ceilings
+- multi-level / bump-out roofs
+- complex intersecting roof forms
 
 --------------------------------------------------
+## CURRENT PRIORITIES
 
-## 📦 PARKED / FUTURE IDEAS
+1. lock in updated source files
+2. start Hip roof with geometry + edge classification only
+3. then add Hip placement rules
+4. then add Hip presets
+5. continue report/proposal evolution after roof architecture is stable
 
-### Presentation Enhancements
-- Replace “Finish” with:
-  - “Show Solution”
-  - or “View Report”
-- Transition directly into proposal screen
+--------------------------------------------------
+## NEXT RULE FOR NEW ROOF TYPES
 
-### Proposal System
-- Show:
-  - vent counts
-  - system type
-  - explanation
-  - product recommendations
+When adding a new roof type:
+1. define geometry
+2. define edge classification
+3. define intake/exhaust assumptions
+4. define placement references
+5. route presets explicitly
+6. then connect airflow
 
-### Multiple Solutions
-- Balanced
-- Upgrade
-- Budget
-
-### Simulation Improvements
-- Start with trapped particles
-- Show intake-only vs exhaust-only inefficiency
-
-### UI Improvements
-- Unified mobile drawer
-- Sliding desktop panels
-- Cleaner action bar
-
-### Visual Polish
-- Vent colors
-- Grid styling
-- Panel sizing
-
-### Business Layer
-- SaaS pricing
-- Accounts
-- Save/share projects
-- Platform integrations
+Do not patch new roof types into old assumptions.

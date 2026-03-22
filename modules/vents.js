@@ -1314,7 +1314,7 @@ function applyShedIntakeOnlyPreset() {
 }
 
 function applyHipIntakeOnlyPreset() {
-	return applyGableIntakeOnlyPreset();
+	return false;
 }
 
 function generateIntakeOnlyPreset() {
@@ -1385,7 +1385,7 @@ function applyShedExhaustOnlyPreset() {
 }
 
 function applyHipExhaustOnlyPreset() {
-	return applyGableExhaustOnlyPreset();
+	return false;
 }
 
 function generateExhaustOnlyPreset() {
@@ -1600,7 +1600,7 @@ function applyShedBalancedPreset({ ventilationRule = "1/150" } = {}) {
 }
 
 function applyHipBalancedPreset({ ventilationRule = "1/150" } = {}) {
-	return applyGableBalancedPreset({ ventilationRule });
+	return false;
 }
 
 function generateBalancedPreset({ ventilationRule = "1/150" } = {}) {

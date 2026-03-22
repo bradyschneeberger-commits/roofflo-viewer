@@ -194,9 +194,223 @@ function createShedRoof({ pitchRise, buildingWidth, overhangDepth, halfBuildingW
     };
 }
 
-function createHipRoof(params) {
-    // Placeholder until dedicated hip geometry is implemented.
-    return createGableRoof(params);
+function createHipRoof({ pitchRise, buildingWidth, buildingLength, overhangDepth, halfBuildingWidth, halfBuildingLength, halfRoofWidth, halfRoofLength }) {
+    const slopePerFoot = pitchRise / 12;
+    const innerSpanToPeak = Math.min(halfBuildingWidth, halfBuildingLength);
+    const outerSpanToPeak = Math.min(halfRoofWidth, halfRoofLength);
+    const ridgeAxis = halfBuildingLength >= halfBuildingWidth ? "z" : "x";
+    const atticPeakHeight = slopePerFoot * innerSpanToPeak;
+    const roofHeightAtBuildingEdge = slopePerFoot * (outerSpanToPeak - innerSpanToPeak);
+    const roofEnvelopePeakHeight = slopePerFoot * outerSpanToPeak;
+    const buildingRidgeHalfLength = Math.max(0, Math.max(halfBuildingWidth, halfBuildingLength) - innerSpanToPeak);
+    const outerRidgeHalfLength = Math.max(0, Math.max(halfRoofWidth, halfRoofLength) - outerSpanToPeak);
+    const hasRidge = buildingRidgeHalfLength > 0.0001;
+
+    return {
+        roofType: "hip",
+        atticHeight: atticPeakHeight,
+        buildingWidth,
+        buildingLength,
+        halfBuildingWidth,
+        halfBuildingLength,
+        halfRoofWidth,
+        halfRoofLength,
+        roofHeightAtBuildingEdgeLeft: roofHeightAtBuildingEdge,
+        roofHeightAtBuildingEdgeRight: roofHeightAtBuildingEdge,
+        roofHeightAtLeftOverhang: 0,
+        roofHeightAtRightOverhang: 0,
+        ridgeX: hasRidge && ridgeAxis === "z" ? 0 : null,
+        ridgeY: hasRidge ? roofEnvelopePeakHeight : null,
+        buildingRidgeHalfLength,
+        outerRidgeHalfLength,
+        roofEnvelopePeakHeight,
+        hasRidge,
+        ridgeAxis,
+        roofSlopeAngle: Math.atan2(pitchRise, 12),
+        intakeReferenceInset: overhangDepth / 2,
+        edgeRoles: {
+            intake: {
+                type: "perimeter-eaves",
+                lowSide: "perimeter"
+            },
+            exhaust: {
+                type: hasRidge ? "short-ridge" : "apex",
+                highSide: hasRidge ? "center-ridge" : "center-apex"
+            }
+        },
+        edgeClassification: {
+            intakeEdges: ["front-eave", "right-eave", "rear-eave", "left-eave"],
+            exhaustEdges: hasRidge ? ["upper-left-slope", "upper-right-slope", "upper-front-hip", "upper-rear-hip"] : ["upper-hip-slopes"],
+            ridgeEdges: hasRidge ? ["ridge"] : [],
+            hipEdges: hasRidge
+                ? ["front-left-hip", "front-right-hip", "rear-left-hip", "rear-right-hip"]
+                : ["apex-front-left-hip", "apex-front-right-hip", "apex-rear-right-hip", "apex-rear-left-hip"],
+            valleyEdges: [],
+            sideEdges: ["front-eave", "right-eave", "rear-eave", "left-eave"]
+        },
+        placementReferenceNames: {
+            intake: "perimeterIntakeReferences",
+            exhaust: hasRidge ? "ridgeCenterLine" : null
+        }
+    };
+}
+
+function createHipSkeleton({ halfWidth, halfLength, peakHeight, eaveY = 0, ridgeAxis = "z" }) {
+    const spanToPeak = Math.min(halfWidth, halfLength);
+    const ridgeHalfLength = Math.max(0, Math.max(halfWidth, halfLength) - spanToPeak);
+    const hasRidge = ridgeHalfLength > 0.0001;
+
+    const eaveCorners = {
+        frontLeft: new THREE.Vector3(-halfWidth, eaveY, -halfLength),
+        frontRight: new THREE.Vector3(halfWidth, eaveY, -halfLength),
+        rearRight: new THREE.Vector3(halfWidth, eaveY, halfLength),
+        rearLeft: new THREE.Vector3(-halfWidth, eaveY, halfLength)
+    };
+
+    const ridgePoints = hasRidge
+        ? (ridgeAxis === "z"
+            ? [
+                new THREE.Vector3(0, peakHeight, -ridgeHalfLength),
+                new THREE.Vector3(0, peakHeight, ridgeHalfLength)
+            ]
+            : [
+                new THREE.Vector3(-ridgeHalfLength, peakHeight, 0),
+                new THREE.Vector3(ridgeHalfLength, peakHeight, 0)
+            ])
+        : [new THREE.Vector3(0, peakHeight, 0)];
+
+    return {
+        hasRidge,
+        ridgeAxis,
+        ridgeHalfLength,
+        peakHeight,
+        eaveY,
+        eaveCorners,
+        ridgePoints
+    };
+}
+
+function createHipRoofSurfaceGeometry(skeleton) {
+    const { frontLeft, frontRight, rearRight, rearLeft } = skeleton.eaveCorners;
+    const vertices = skeleton.hasRidge
+        ? [frontLeft, frontRight, rearRight, rearLeft, skeleton.ridgePoints[0], skeleton.ridgePoints[1]]
+        : [frontLeft, frontRight, rearRight, rearLeft, skeleton.ridgePoints[0]];
+
+    const geometry = new THREE.BufferGeometry().setFromPoints(vertices);
+    const indices = skeleton.hasRidge
+        ? (skeleton.ridgeAxis === "z"
+            ? [
+                0, 1, 4,
+                1, 2, 5,
+                1, 5, 4,
+                2, 3, 5,
+                3, 0, 4,
+                3, 4, 5
+            ]
+            : [
+                0, 3, 4,
+                0, 4, 5,
+                0, 5, 1,
+                1, 5, 2,
+                3, 2, 5,
+                3, 5, 4
+            ])
+        : [
+            0, 1, 4,
+            1, 2, 4,
+            2, 3, 4,
+            3, 0, 4
+        ];
+
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+    return geometry;
+}
+
+function createHipAtticVolumeGeometry(skeleton) {
+    const { frontLeft, frontRight, rearRight, rearLeft } = skeleton.eaveCorners;
+    const floorCorners = [
+        new THREE.Vector3(frontLeft.x, 0, frontLeft.z),
+        new THREE.Vector3(frontRight.x, 0, frontRight.z),
+        new THREE.Vector3(rearRight.x, 0, rearRight.z),
+        new THREE.Vector3(rearLeft.x, 0, rearLeft.z)
+    ];
+    const topCorners = [frontLeft, frontRight, rearRight, rearLeft];
+    const topVertices = skeleton.hasRidge ? [skeleton.ridgePoints[0], skeleton.ridgePoints[1]] : [skeleton.ridgePoints[0]];
+    const geometry = new THREE.BufferGeometry().setFromPoints([...floorCorners, ...topCorners, ...topVertices]);
+
+    const indices = [
+        0, 2, 1,
+        0, 3, 2,
+        0, 1, 5,
+        0, 5, 4,
+        1, 2, 6,
+        1, 6, 5,
+        2, 3, 7,
+        2, 7, 6,
+        3, 0, 4,
+        3, 4, 7
+    ];
+
+    if (skeleton.hasRidge) {
+        if (skeleton.ridgeAxis === "z") {
+            indices.push(
+                4, 5, 8,
+                5, 6, 9,
+                5, 9, 8,
+                6, 7, 9,
+                7, 4, 8,
+                7, 8, 9
+            );
+        } else {
+            indices.push(
+                4, 7, 8,
+                4, 8, 9,
+                4, 9, 5,
+                5, 9, 6,
+                7, 6, 9,
+                7, 9, 8
+            );
+        }
+    } else {
+        indices.push(
+            4, 5, 8,
+            5, 6, 8,
+            6, 7, 8,
+            7, 4, 8
+        );
+    }
+
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+    return geometry;
+}
+
+function createReferenceLine(start, end, name, color) {
+    const line = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints([start, end]),
+        new THREE.LineBasicMaterial({ color })
+    );
+    line.name = name;
+    return line;
+}
+
+function createQuadZoneMesh(points, material, name) {
+    const geometry = new THREE.BufferGeometry();
+    const vertices = new Float32Array([
+        points[0].x, points[0].y, points[0].z,
+        points[1].x, points[1].y, points[1].z,
+        points[2].x, points[2].y, points[2].z,
+        points[3].x, points[3].y, points[3].z
+    ]);
+
+    geometry.setAttribute("position", new THREE.BufferAttribute(vertices, 3));
+    geometry.setIndex([0, 1, 2, 0, 2, 3]);
+    geometry.computeVertexNormals();
+
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.name = name;
+    return mesh;
 }
 
 function createAtticGeometry({
@@ -285,8 +499,11 @@ function createAtticGeometry({
 
     // Calculations
     const halfBuildingWidth = buildingWidth / 2;
+    const halfBuildingLength = buildingLength / 2;
     const roofWidth = buildingWidth + (2 * overhangDepth);
+    const roofLength = buildingLength + (2 * overhangDepth);
     const halfRoofWidth = roofWidth / 2;
+    const halfRoofLength = roofLength / 2;
 
     const normalizedRoofType = String(roofType || "gable").toLowerCase();
     const roofBuilder = normalizedRoofType === "shed"
@@ -296,10 +513,14 @@ function createAtticGeometry({
     const roofProfile = roofBuilder({
         pitchRise,
         buildingWidth,
+        buildingLength,
         overhangDepth,
         roofWidth,
+        roofLength,
         halfBuildingWidth,
-        halfRoofWidth
+        halfBuildingLength,
+        halfRoofWidth,
+        halfRoofLength
     });
 
     atticHeight = roofProfile.atticHeight;
@@ -313,13 +534,228 @@ function createAtticGeometry({
     const exhaustReferenceY = roofProfile.exhaustReferenceY ?? ridgeY;
     currentGeometryParams.roofEdgeRoles = roofProfile.edgeRoles || null;
     currentGeometryParams.edgeClassification = roofProfile.edgeClassification || null;
-    currentGeometryParams.primaryIntakeReference = roofProfile.roofType === "shed"
-        ? "intakeEdgeLine"
-        : "leftIntakePlacement";
-    currentGeometryParams.primaryExhaustReference = roofProfile.roofType === "shed"
-        ? "exhaustEdgeLine"
-        : "ridgeCenterLine";
+    currentGeometryParams.primaryIntakeReference = roofProfile.placementReferenceNames?.intake
+        ?? (roofProfile.roofType === "shed" ? "intakeEdgeLine" : "leftIntakePlacement");
+    currentGeometryParams.primaryExhaustReference = roofProfile.placementReferenceNames?.exhaust
+        ?? (roofProfile.roofType === "shed" ? "exhaustEdgeLine" : "ridgeCenterLine");
     currentGeometryParams.hasRidge = Boolean(roofProfile.hasRidge);
+
+    if (roofProfile.roofType === "hip") {
+        const outerHipSkeleton = createHipSkeleton({
+            halfWidth: roofProfile.halfRoofWidth,
+            halfLength: roofProfile.halfRoofLength,
+            peakHeight: roofProfile.roofEnvelopePeakHeight,
+            ridgeAxis: roofProfile.ridgeAxis
+        });
+        const innerHipSkeleton = createHipSkeleton({
+            halfWidth: roofProfile.halfBuildingWidth,
+            halfLength: roofProfile.halfBuildingLength,
+            peakHeight: roofProfile.atticHeight,
+            eaveY: roofProfile.roofHeightAtBuildingEdgeLeft,
+            ridgeAxis: roofProfile.ridgeAxis
+        });
+
+        const roofGeometry = createHipRoofSurfaceGeometry(outerHipSkeleton);
+
+        roofEnvelope = new THREE.Mesh(
+            roofGeometry,
+            new THREE.MeshStandardMaterial({
+                transparent: true,
+                opacity: 0,
+                side: THREE.DoubleSide,
+                depthWrite: false
+            })
+        );
+        roofEnvelope.name = "roofEnvelope";
+        atticSystem.add(roofEnvelope);
+
+        const atticGeometry = createHipAtticVolumeGeometry(innerHipSkeleton);
+
+        const atticMaterial = new THREE.MeshStandardMaterial({
+            color: 0x00aa00,
+            transparent: true,
+            opacity: 0.35,
+            side: THREE.DoubleSide,
+            depthWrite: false
+        });
+
+        atticCore = new THREE.Mesh(atticGeometry, atticMaterial);
+        atticCore.name = "atticCore";
+        atticSystem.add(atticCore);
+
+        const atticEdges = new THREE.EdgesGeometry(atticGeometry);
+        const atticEdgeLines = new THREE.LineSegments(
+            atticEdges,
+            new THREE.LineBasicMaterial({ color: 0xffffff })
+        );
+        atticCore.add(atticEdgeLines);
+
+        intakePlenum = null;
+        leftPlenum = null;
+        rightPlenum = null;
+        leftIntakePlacement = null;
+        rightIntakePlacement = null;
+        leftExhaustZone = null;
+        rightExhaustZone = null;
+        leftStaticPlacementLine = null;
+        rightStaticPlacementLine = null;
+        intakeEdgeLine = null;
+        exhaustEdgeLine = null;
+
+        const intakeZoneMaterial = new THREE.MeshBasicMaterial({
+            color: 0x2255ff,
+            transparent: true,
+            opacity: 0.35,
+            side: THREE.DoubleSide,
+            depthWrite: false
+        });
+        const outerEaves = outerHipSkeleton.eaveCorners;
+        const innerEaves = innerHipSkeleton.eaveCorners;
+        const perimeterIntakeReferences = [
+            createReferenceLine(
+                outerEaves.frontLeft.clone().lerp(innerEaves.frontLeft, 0.5).add(new THREE.Vector3(0, 0.02, 0)),
+                outerEaves.frontRight.clone().lerp(innerEaves.frontRight, 0.5).add(new THREE.Vector3(0, 0.02, 0)),
+                "frontIntakeReference",
+                0x66f7ff
+            ),
+            createReferenceLine(
+                outerEaves.frontRight.clone().lerp(innerEaves.frontRight, 0.5).add(new THREE.Vector3(0, 0.02, 0)),
+                outerEaves.rearRight.clone().lerp(innerEaves.rearRight, 0.5).add(new THREE.Vector3(0, 0.02, 0)),
+                "rightIntakeReference",
+                0x66f7ff
+            ),
+            createReferenceLine(
+                outerEaves.rearRight.clone().lerp(innerEaves.rearRight, 0.5).add(new THREE.Vector3(0, 0.02, 0)),
+                outerEaves.rearLeft.clone().lerp(innerEaves.rearLeft, 0.5).add(new THREE.Vector3(0, 0.02, 0)),
+                "rearIntakeReference",
+                0x66f7ff
+            ),
+            createReferenceLine(
+                outerEaves.rearLeft.clone().lerp(innerEaves.rearLeft, 0.5).add(new THREE.Vector3(0, 0.02, 0)),
+                outerEaves.frontLeft.clone().lerp(innerEaves.frontLeft, 0.5).add(new THREE.Vector3(0, 0.02, 0)),
+                "leftIntakeReference",
+                0x66f7ff
+            )
+        ];
+
+        for (const intakeReference of perimeterIntakeReferences) {
+            atticSystem.add(intakeReference);
+        }
+
+        const perimeterIntakeZones = [
+            createQuadZoneMesh([
+                outerEaves.frontLeft,
+                outerEaves.frontRight,
+                innerEaves.frontRight,
+                innerEaves.frontLeft
+            ], intakeZoneMaterial.clone(), "frontIntakeZone"),
+            createQuadZoneMesh([
+                outerEaves.frontRight,
+                outerEaves.rearRight,
+                innerEaves.rearRight,
+                innerEaves.frontRight
+            ], intakeZoneMaterial.clone(), "rightIntakeZone"),
+            createQuadZoneMesh([
+                outerEaves.rearRight,
+                outerEaves.rearLeft,
+                innerEaves.rearLeft,
+                innerEaves.rearRight
+            ], intakeZoneMaterial.clone(), "rearIntakeZone"),
+            createQuadZoneMesh([
+                outerEaves.rearLeft,
+                outerEaves.frontLeft,
+                innerEaves.frontLeft,
+                innerEaves.rearLeft
+            ], intakeZoneMaterial.clone(), "leftIntakeZone")
+        ];
+
+        for (const intakeZoneMesh of perimeterIntakeZones) {
+            atticSystem.add(intakeZoneMesh);
+            const zoneEdges = new THREE.EdgesGeometry(intakeZoneMesh.geometry);
+            const zoneEdgeLines = new THREE.LineSegments(
+                zoneEdges,
+                new THREE.LineBasicMaterial({ color: 0xffffff })
+            );
+            intakeZoneMesh.add(zoneEdgeLines);
+        }
+
+        if (roofProfile.hasRidge) {
+            ridgeCenterLine = createReferenceLine(
+                outerHipSkeleton.ridgePoints[0].clone(),
+                outerHipSkeleton.ridgePoints[1].clone(),
+                "ridgeCenterLine",
+                0xffe347
+            );
+            atticSystem.add(ridgeCenterLine);
+        } else {
+            ridgeCenterLine = null;
+        }
+
+        // Recenter the Hip assembly in X/Z after overhang expansion so it stays
+        // aligned with the shared world/grid origin like the other roof types.
+        const hipBounds = new THREE.Box3().setFromObject(atticSystem);
+        const hipCenter = hipBounds.getCenter(new THREE.Vector3());
+        if (Number.isFinite(hipCenter.x) && Number.isFinite(hipCenter.z)) {
+            atticSystem.position.x -= hipCenter.x;
+            atticSystem.position.z -= hipCenter.z;
+        }
+
+        intakeZones = {
+            primary: null,
+            perimeter: perimeterIntakeZones,
+            references: perimeterIntakeReferences,
+            legacy: []
+        };
+
+        placementReferences = {
+            intake: {
+                perimeter: perimeterIntakeReferences,
+                legacy: []
+            },
+            exhaust: {
+                primary: ridgeCenterLine,
+                ridge: ridgeCenterLine,
+                legacy: []
+            },
+            ridge: ridgeCenterLine
+        };
+
+        edgeClassification = {
+            roofType: roofProfile.roofType,
+            intakeEdges: roofProfile.edgeClassification?.intakeEdges || [],
+            exhaustEdges: roofProfile.edgeClassification?.exhaustEdges || [],
+            ridgeEdges: roofProfile.edgeClassification?.ridgeEdges || [],
+            hipEdges: roofProfile.edgeClassification?.hipEdges || [],
+            valleyEdges: roofProfile.edgeClassification?.valleyEdges || [],
+            sideEdges: roofProfile.edgeClassification?.sideEdges || []
+        };
+
+        return {
+            roofType: roofProfile.roofType,
+            atticSystem,
+            buildingFootprintBase,
+            roofEnvelope,
+            atticCore,
+            intakePlenum,
+            leftPlenum,
+            rightPlenum,
+            leftIntakePlacement,
+            rightIntakePlacement,
+            leftExhaustZone,
+            rightExhaustZone,
+            leftStaticPlacementLine,
+            rightStaticPlacementLine,
+            ridgeCenterLine,
+            intakeEdgeLine,
+            exhaustEdgeLine,
+            intakeZones,
+            placementReferences,
+            edgeClassification,
+            atticHeight,
+            roofHeightAtBuildingEdge,
+            roofWidth
+        };
+    }
 
     // Keep compatibility with existing return shape
     const roofHeightAtBuildingEdge = Math.max(roofHeightAtBuildingEdgeLeft, roofHeightAtBuildingEdgeRight);
@@ -786,6 +1222,8 @@ function createAtticGeometry({
         intakeEdges: roofProfile.edgeClassification?.intakeEdges || [],
         exhaustEdges: roofProfile.edgeClassification?.exhaustEdges || [],
         ridgeEdges: roofProfile.edgeClassification?.ridgeEdges || [],
+        hipEdges: roofProfile.edgeClassification?.hipEdges || [],
+        valleyEdges: roofProfile.edgeClassification?.valleyEdges || [],
         sideEdges: roofProfile.edgeClassification?.sideEdges || []
     };
 

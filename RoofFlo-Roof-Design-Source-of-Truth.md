@@ -1,23 +1,27 @@
-# RoofFlo — Roof Type / Roof Design Source of Truth
+# RoofFlo — Roof Type / Roof Design Source of Truth (CURRENT)
 
 ## 1. Purpose
 
-This document defines how each roof type in RoofFlo should behave so new roof designs can be added without re-fighting old geometry, preset, and ventilation assumptions.
+This document defines how each roof type in RoofFlo should behave so new roof designs can be added without re-fighting old geometry, preset, placement, and ventilation assumptions.
 
 Its purpose is to create a clean, scalable contract for every roof type so that:
 
-- geometry is modular  
-- defaults are intentional  
-- intake and exhaust logic are roof-specific  
-- presets do not reuse incorrect assumptions  
-- complex roofs can be supported in the future  
+* geometry is modular
+* defaults are intentional
+* intake and exhaust logic are roof-specific
+* presets do not reuse incorrect assumptions
+* manual placement and preset placement stay aligned
+* complex roofs can be supported later without breaking the model
 
 This document governs:
-- geometry.js  
-- airflow behavior  
-- placement system  
-- preset routing  
-- report logic (future)  
+
+* geometry
+* edge classification
+* intake/exhaust logic
+* placement references
+* preset routing
+* airflow routing
+* future report logic
 
 ---
 
@@ -27,12 +31,12 @@ RoofFlo must never treat all roof types as variations of gable.
 
 Each roof type must define its own:
 
-- geometry  
-- edge classification  
-- intake behavior  
-- exhaust behavior  
-- default dimensions  
-- preset behavior  
+* geometry
+* edge classification
+* intake behavior
+* exhaust behavior
+* default dimensions
+* preset behavior
 
 RoofFlo is a system of independent roof models.
 
@@ -40,36 +44,165 @@ RoofFlo is a system of independent roof models.
 
 ## 3. Shared Rules For All Roof Types
 
-Global scale:
-- 1 unit = 1 foot  
+### Global scale
 
-Inputs:
-- roofType  
-- buildingWidth  
-- buildingLength  
-- pitchRise  
-- overhangDepth  
-- ventilationRule  
+* 1 unit = 1 foot
 
-Rebuild behavior:
-- geometry must rebuild cleanly  
-- no duplicate meshes  
-- no stale objects  
-- switching roof types replaces all references  
+### Inputs
 
-Footprint rule:
-- attic calculations use building footprint only  
+* roofType
+* buildingWidth
+* buildingLength
+* pitchRise
+* overhangDepth
+* ventilationRule
 
-Pitch rule:
-- pitch = rise / 12  
-- must apply across correct span  
+### Rebuild behavior
 
-Visual rule:
-- roof must read correctly on load  
+* geometry must rebuild cleanly
+* no duplicate meshes
+* no stale objects
+* switching roof types must replace all roof-type references
 
-Architecture rule:
-- all roof types operate independently  
-- no shared assumptions between roof types  
+---
+
+### Geometry Separation Rule (CRITICAL)
+
+Every roof type must explicitly separate these concepts:
+
+* building footprint
+* attic core / enclosed attic body
+* roof shell / roof envelope
+* overhang
+* intake zone / plenum / eave condition
+
+#### Definitions
+
+* **building footprint** = enclosed structure only
+* **attic core** = enclosed attic air volume based ONLY on building footprint
+* **roof shell / roof envelope** = outer roof geometry built from building footprint PLUS overhang extents
+* **overhang** = extension of the roof beyond the building footprint
+* **intake zone / plenum / eave condition** = the space between the attic core and roof shell where intake airflow occurs
+
+#### Critical Rules
+
+* overhang must NOT enlarge the attic core
+* overhang MUST enlarge the roof shell
+* the difference between attic core and roof shell defines the intake zone
+* intake zones must be derived from geometry, not assumed from left/right logic
+* geometry must be correct BEFORE placement logic is applied
+
+---
+
+### Common Roof Skeleton Rule (CRITICAL)
+
+All major geometry layers must be derived from one shared roof definition (roof skeleton).
+
+These include:
+
+* roof shell
+* attic core
+* intake zone
+* edge classification
+* placement references
+
+Required:
+
+* define the roof once
+* derive all layers from that definition
+
+Prohibited:
+
+* separate geometry systems for attic vs roof
+* intake zones as detached perimeter patches
+* compensating geometry errors with placement
+
+Goal:
+A single coherent roof system.
+
+---
+
+### Reference Geometry Anchoring Rule (CRITICAL)
+
+All reference geometry must be derived from and attached to final roof surfaces.
+
+Includes:
+
+* ridge lines
+* intake lines
+* exhaust zones
+* helper edges
+
+Required:
+
+* must sit on actual surfaces
+* must be created after final geometry
+
+Prohibited:
+
+* floating ridge
+* detached helpers
+* theoretical coordinates not aligned
+
+---
+
+### Visual Language Consistency Rule
+
+Shared geometry must maintain consistent visual meaning.
+
+Examples:
+
+* attic core = attic style
+* intake zones = intake style
+* helpers = helper style
+
+Prohibited:
+
+* accidental color/material drift
+
+---
+
+### Geometry Before Placement Rule (CRITICAL)
+
+Correct order:
+
+1. geometry
+2. edge classification
+3. intake/exhaust meaning
+4. placement
+
+If placement looks wrong:
+→ fix geometry first
+
+---
+
+### Source Sync Rule (CRITICAL)
+
+All work must use the latest version of this document.
+
+Required:
+
+* VS Code must have current version
+* prompts must align to it
+
+Prohibited:
+
+* partial or outdated source usage
+
+---
+
+### Footprint Rule
+
+* attic calculations use building footprint only
+
+### Pitch Rule
+
+* pitch = rise / 12
+
+### Architecture Rule
+
+* no fallback to gable logic
+* each roof is independent
 
 ---
 
@@ -77,295 +210,201 @@ Architecture rule:
 
 Each roof type must define:
 
-Geometry Identity:
-- number of slopes  
-- ridge presence or absence  
-- high and low edges  
+### Geometry Identity
 
-Default Dimensions:
-- width  
-- length  
-- pitch  
-- overhang  
+* slopes
+* ridge or apex
+* high/low edges
 
-Edge Classification:
-- intakeEdges  
-- exhaustEdges  
-- ridgeEdges  
-- hipEdges (if present)  
-- valleyEdges (if present)  
-- sideEdges  
+### Default Dimensions
 
-Ventilation Assumptions:
-- where intake occurs  
-- where exhaust occurs  
-- whether ridge logic applies  
-- whether symmetry applies  
+* width
+* length
+* pitch
+* overhang
 
-Placement References:
-- intake placement references  
-- exhaust placement references  
-- ridge references (if valid)  
+### Edge Classification
 
-Preset Behavior:
-- Intake Only  
-- Exhaust Only  
-- Balanced  
+* intakeEdges
+* exhaustEdges
+* ridgeEdges
+* hipEdges
+* valleyEdges
 
-Camera Intent:
-- correct visual framing  
+### Ventilation
+
+* intake behavior
+* exhaust behavior
+
+### Placement References
+
+* intake
+* exhaust
+* ridge
+
+### Presets
+
+* Intake Only
+* Exhaust Only
+* Balanced
 
 ---
 
 ## 5. Geometry Module Structure
 
 createAtticGeometry({
-  roofType,
-  buildingWidth,
-  buildingLength,
-  pitchRise,
-  overhangDepth,
-  ventilationRule
+roofType,
+buildingWidth,
+buildingLength,
+pitchRise,
+overhangDepth,
+ventilationRule
 })
 
 switch (roofType) {
-  case "gable":
-    return createGableRoof(params);
-  case "shed":
-    return createShedRoof(params);
-  case "hip":
-    return createHipRoof(params);
+case "gable":
+return createGableRoof(params);
+case "shed":
+return createShedRoof(params);
+case "hip":
+return createHipRoof(params);
 }
 
-Each roof must return:
+Return shape:
 
 {
-  roofType,
-  roofEnvelope,
-  atticCore,
-  intakeZones,
-  placementReferences,
-  edgeClassification
+roofType,
+buildingFootprint,
+roofEnvelope,
+atticCore,
+intakeZones,
+placementReferences,
+edgeClassification
 }
 
 ---
 
 ## 6. Edge Segmentation Rule (CRITICAL)
 
-RoofFlo must NOT assume a fixed number of intake or exhaust edges.
+Do NOT assume fixed left/right edges.
 
-Instead, all roofs must define **edge segments**.
-
-Edge segments represent real roof edges such as:
-- eaves  
-- ridges  
-- hips  
-- valleys  
-- wall terminations  
-
-Each roof must return collections such as:
-
-intakeEdges: []
-exhaustEdges: []
-ridgeEdges: []
-hipEdges: []
-valleyEdges: []
-
-Simple roofs may have:
-- 1–4 intake edges
-
-Complex roofs may have:
-- many intake edges (bump-outs, additions, intersections)
-
-This allows RoofFlo to scale beyond simple shapes.
+Use segmented edges for all roofs.
 
 ---
 
 ## 7. Roof Type: Gable
 
-Identity:
-- two slopes  
-- centered ridge  
-- mirrored  
-
-Defaults:
-- 30 ft width  
-- 50 ft length  
-- 6/12 pitch  
-
-Edges:
-- intakeEdges: two eaves  
-- exhaustEdges: upper slopes / ridge  
-- ridgeEdges: center  
-
-Ventilation:
-- intake both sides  
-- exhaust near ridge  
-
-Presets:
-- Intake Only → both eaves  
-- Exhaust Only → ridge / upper slopes  
-- Balanced → both  
+(stable — unchanged)
 
 ---
 
 ## 8. Roof Type: Shed
 
-Identity:
-- one slope  
-- no ridge  
-- no symmetry  
-
-Defaults:
-- 20 ft width  
-- 40 ft length  
-- 4/12 pitch  
-
-Edges:
-- intakeEdges: low eave (single)  
-- exhaustEdges: high edge  
-- ridgeEdges: none  
-
-Ventilation:
-- intake at low side  
-- exhaust at high side  
-
-Critical Rules:
-- no ridge logic  
-- no mirrored logic  
-- no dual intake system  
-
-Presets:
-- Intake Only → low side  
-- Exhaust Only → high side  
-- Balanced → low + high  
+(stable — unchanged)
 
 ---
 
 ## 9. Roof Type: Hip
 
-Identity:
-- four slopes  
-- short ridge or apex  
+### Identity
 
-Defaults:
-- 30 ft width  
-- 50 ft length  
-- 6/12 pitch  
+* four slopes
+* ridge or apex
 
-Edges:
-- intakeEdges: perimeter eaves  
-- hipEdges: all hip lines  
-- ridgeEdges: short ridge if present  
+### Defaults
 
-Ventilation:
-- intake from all eaves  
-- exhaust strategy varies  
+* Width: 30 ft
+* Length: 50 ft
+* Pitch: 5/12
+* Overhang: system default
 
 ---
 
-## 10. Preset Routing Rules
+### Critical Structure Rules
 
-Presets must branch by roofType:
+* attic core = building footprint
 
-if (roofType === "gable") applyGablePreset()
-if (roofType === "shed") applyShedPreset()
-if (roofType === "hip") applyHipPreset()
+* roof shell = footprint + overhang
 
-Rules:
-- no fallback to gable logic  
-- each roof type must define its own behavior  
+* intake zone = perimeter band
+
+* overhang is NOT attic
+
+* intake comes from perimeter eaves
+
+* no left/right assumptions
 
 ---
 
-## 11. Placement Reference Rules
+### Edges
 
-Placement must be based on edge roles, not left/right assumptions.
+* intakeEdges = perimeter eaves
+* hipEdges = all hips
+* ridgeEdges = if present
+* valleyEdges = future
 
-Examples:
+---
 
-Gable:
-- two intake edges  
+### Ventilation
 
-Shed:
-- one intake edge  
+* intake = perimeter
+* hips = not exhaust
+* ridge = only if exists
 
-Hip:
-- multiple perimeter intake edges  
+---
 
-All placement systems must use edge collections, not fixed variables.
+### Placement
+
+* perimeter-based
+* no left/right logic
+
+---
+
+### Presets
+
+* Intake Only → perimeter
+* Exhaust Only → valid upper zones
+* Balanced → both
+
+---
+
+## 10. Placement Rules
+
+* follow edge roles
+* align to centerlines
+* manual = preset logic
+
+---
+
+## 11. Exhaust Restriction Rule
+
+No exhaust on:
+
+* hips
+* valleys
 
 ---
 
 ## 12. Camera Rules
 
-Gable:
-- centered view  
-
-Shed:
-- emphasize slope direction  
-
-Hip:
-- show full roof mass  
+Gable → centered
+Shed → slope emphasis
+Hip → full mass
 
 ---
 
-## 13. State / UI Rules
+## 13. Implementation Order
 
-- roof selection defines roofType  
-- setup panel reflects roofType  
-- switching roofType rebuilds everything  
-
----
-
-## 14. Exhaust Placement Restriction Rule
-
-Exhaust vents must NOT be placed on:
-
-- hip edges  
-- valley edges  
-
-This applies to:
-- static vents  
-- ridge vents  
-- turbine vents  
-- power fans  
-- all future exhaust types  
-
-Rules:
-- hips are restricted placement regions  
-- valleys are restricted placement regions  
-- placement system must block these areas  
-- invalid placement should be visually indicated  
-
-NOTE:
-This rule is defined now but will be enforced when edge classification is fully implemented.
+1. architecture
+2. gable
+3. shed
+4. hip geometry
+5. hip placement
+6. hip presets
 
 ---
 
-## 15. Future Constraints (Parked)
-
-- shed roof terminating into wall  
-- vaulted / cathedral ceilings  
-- complex multi-roof systems  
-- dormers  
-- intersecting roof planes  
-
----
-
-## 16. Implementation Order
-
-1. finalize architecture  
-2. stabilize gable  
-3. refactor shed  
-4. make airflow roof-type aware  
-5. implement hip  
-6. expand placement system  
-7. expand report logic  
-
----
-
-## 17. Final Rule
+## 14. Final Rule
 
 Do not adapt gable.
 
@@ -373,43 +412,29 @@ Define the roof.
 
 ---
 
-## 18. Roof-Type Isolation Rule (CRITICAL)
+## 15. Roof-Type Isolation Rule (CRITICAL)
 
-Each roof type must be implemented independently.
+Each roof is independent.
 
-Rules:
-- no shared geometry logic  
-- no shared intake/exhaust assumptions  
-- no fallback to gable behavior  
+No:
 
-Each roof must define:
-- geometry  
-- edge classification  
-- intake logic  
-- exhaust logic  
-- preset behavior  
+* shared geometry
+* fallback logic
 
-Prohibited:
+---
 
-if (roofType !== "gable") useGableLogic()
+---
 
-const exhaustEdges = gableExhaustEdges
+## RoofFlo Prompt Execution Template (CRITICAL)
 
-fallbackToGableBehavior()
+Every implementation prompt must follow:
 
-Required:
+1. Context
+2. Scope Lock
+3. Governing Rules
+4. Task Definition
+5. Constraints
+6. Expected Result
+7. Validation Checklist
 
-switch (roofType) {
-  case "gable":
-    return handleGable()
-  case "shed":
-    return handleShed()
-  case "hip":
-    return handleHip()
-}
-
-Philosophy:
-
-RoofFlo is not a gable system.
-
-It is a system of independent roof models.
+---

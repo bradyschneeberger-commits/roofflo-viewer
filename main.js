@@ -209,7 +209,7 @@ let pendingViewerEntryAfterSelection = null;
 
 const ROOF_TYPE_GEOMETRY_DEFAULTS = {
     gable: { width: 30, length: 50, pitch: 6 },
-    hip: { width: 30, length: 50, pitch: 6 },
+    hip: { width: 30, length: 50, pitch: 5 },
     shed: { width: 20, length: 40, pitch: 4 }
 };
 
