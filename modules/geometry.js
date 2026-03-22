@@ -42,6 +42,7 @@ Dependencies:
 
 import * as THREE from "three";
 import { scene } from "./scene.js";
+import { validateRoofType } from "../main.js";
 
 // Geometry references
 let atticSystem = null;
@@ -642,7 +643,7 @@ function createAtticGeometry({
     const halfRoofWidth = roofWidth / 2;
     const halfRoofLength = roofLength / 2;
 
-    const normalizedRoofType = String(roofType || "gable").toLowerCase();
+    const normalizedRoofType = validateRoofType(roofType);
     const roofBuilder = normalizedRoofType === "shed"
         ? createShedRoof
         : (normalizedRoofType === "hip" ? createHipRoof : createGableRoof);

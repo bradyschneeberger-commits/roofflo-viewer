@@ -31,6 +31,7 @@ clearAllVents()
 import * as THREE from "three";
 import { scene } from "./scene.js";
 import { getGeometryState } from "./geometry.js";
+import { validateRoofType } from "../main.js";
 import {
 	calculateAtticArea,
 	calculateRequiredVentilation,
@@ -459,13 +460,32 @@ function setRayFromPointer(camera, pointerNdc) {
 
 function getGeometryRoofType() {
 	const { currentGeometryParams } = getGeometryState();
-	return currentGeometryParams?.roofType || "gable";
+	const roofType = currentGeometryParams?.roofType;
+	if (!roofType) {
+		console.error(
+			"[RoofFlo Vents] Roof type not available in geometry state. " +
+			"Geometry may not be initialized. Vent operations cannot proceed."
+		);
+		return null;
+	}
+	try {
+		return validateRoofType(roofType);
+	} catch (error) {
+		console.error("[RoofFlo Vents]", error.message);
+		return null;
+	}
 }
 
 function getAvailableIntakePlacementLines() {
 	const { intakeEdgeLine, leftIntakePlacement, rightIntakePlacement } = getGeometryState();
+	const roofType = getGeometryRoofType();
 
-	if (getGeometryRoofType() === "shed") {
+	if (roofType === null) {
+		console.error("[RoofFlo Vents] Cannot determine available intake placement lines: roof type is invalid.");
+		return [];
+	}
+
+	if (roofType === "shed") {
 		return intakeEdgeLine ? [intakeEdgeLine] : [];
 	}
 
@@ -1195,7 +1215,21 @@ function restoreVentLayout(layout) {
 		rightExhaustZone,
 		ridgeCenterLine
 	} = getGeometryState();
-	const roofType = currentGeometryParams?.roofType || "gable";
+	
+	const roofTypeRaw = currentGeometryParams?.roofType;
+	let roofType;
+	try {
+		roofType = roofTypeRaw ? validateRoofType(roofTypeRaw) : null;
+	} catch (error) {
+		console.error("[RoofFlo Vents]", error.message);
+		roofType = null;
+	}
+	
+	if (!roofType) {
+		console.error("[RoofFlo Vents] Cannot restore vent layout: roof type is invalid.");
+		return false;
+	}
+	
 	const intakePlacementLines = getAvailableIntakePlacementLines();
 
 	if (!intakePlacementLines.length || !leftStaticPlacementLine || !rightStaticPlacementLine) {

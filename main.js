@@ -213,6 +213,35 @@ const ROOF_TYPE_GEOMETRY_DEFAULTS = {
     shed: { width: 20, length: 40, pitch: 4 }
 };
 
+/**
+ * Validates and normalizes roof type.
+ * Throws an error if the roof type is invalid, missing, or unsupported.
+ * @param {string|null|undefined} roofType - The roof type to validate
+ * @returns {string} The normalized roof type (lowercase)
+ * @throws {Error} If roof type is invalid or unsupported
+ */
+function validateRoofType(roofType) {
+    const normalizedType = String(roofType || "").toLowerCase().trim();
+    
+    if (!normalizedType) {
+        throw new Error(
+            "[RoofFlo Architecture] Roof type is required but was not provided. " +
+            "Valid types are: gable, hip, shed. " +
+            "This indicates a system initialization error."
+        );
+    }
+    
+    if (!ROOF_TYPE_GEOMETRY_DEFAULTS.hasOwnProperty(normalizedType)) {
+        throw new Error(
+            `[RoofFlo Architecture] Unsupported roof type '${normalizedType}'. ` +
+            `Valid types are: ${Object.keys(ROOF_TYPE_GEOMETRY_DEFAULTS).join(", ")}. ` +
+            "Silent fallback to gable is not allowed to maintain architecture integrity."
+        );
+    }
+    
+    return normalizedType;
+}
+
 const roofOverlayParticleState = {
     layer: null,
     canvas: null,
@@ -368,7 +397,8 @@ function toNumber(value, fallback) {
 }
 
 function getGeometryDefaultsForRoofType(roofType) {
-    return ROOF_TYPE_GEOMETRY_DEFAULTS[roofType] || ROOF_TYPE_GEOMETRY_DEFAULTS.gable;
+    const validatedType = validateRoofType(roofType);
+    return ROOF_TYPE_GEOMETRY_DEFAULTS[validatedType];
 }
 
 function getRoofTypePitchFallback(roofType = selectedRoofType) {
@@ -2444,7 +2474,20 @@ function refreshResultsPanel() {
 }
 
 function syncSetupOverview({ roofType, atticAreaSqFt, requiredVentIn2, requiredIntakeIn2, requiredExhaustIn2 } = {}) {
-    const resolvedRoofType = roofType || selectedRoofType || "gable";
+    const typeToSync = roofType || selectedRoofType;
+    
+    let resolvedRoofType;
+    try {
+        resolvedRoofType = typeToSync ? validateRoofType(typeToSync) : null;
+    } catch (error) {
+        console.error("[RoofFlo Setup Overview]", error.message);
+        return; // Cannot display without valid roof type
+    }
+    
+    if (!resolvedRoofType) {
+        console.error("[RoofFlo Setup Overview] Roof type not available for display synchronization.");
+        return;
+    }
 
     if (setupOverviewRoofIcon) {
         setupOverviewRoofIcon.classList.remove("is-gable", "is-hip", "is-shed");
@@ -2495,7 +2538,20 @@ function rebuildGeometryFromInputs() {
     const overhangDepth = overhangDepthInches / 12;
     const roofWidth = buildingWidth + (2 * overhangDepth);
     const roofLength = buildingLength + (2 * overhangDepth);
-    const roofType = selectedRoofType || "gable";
+    
+    let roofType;
+    try {
+        if (!selectedRoofType) {
+            throw new Error(
+                "[RoofFlo Architecture] Roof type selection is required but not set. " +
+                "This indicates an initialization error - select a roof type to proceed."
+            );
+        }
+        roofType = validateRoofType(selectedRoofType);
+    } catch (error) {
+        console.error("[RoofFlo]", error.message);
+        return;
+    }
 
     updateGridExtentForRoof({ roofWidth, roofLength });
 
@@ -4186,6 +4242,7 @@ syncLaunchParticleAnimation("launch");
 updateVentRuleHelpText();
 
 export {
+    validateRoofType,
     selectedVentilationRule,
     createViewerSnapshot,
     restoreViewerSnapshot,

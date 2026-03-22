@@ -39,6 +39,7 @@ import {
   calculateRequiredExhaust,
   calculateInstalledVentilation
 } from "./calculations.js";
+import { validateRoofType } from "../main.js";
 
 const STALE_AIR_COLOR = 0xffa500;
 const FRESH_AIR_COLOR = 0x66ccff;
@@ -707,22 +708,58 @@ function getAtticBounds() {
   const halfWidth = buildingWidth / 2;
   const halfLength = buildingLength / 2;
   const atticHeight = geometry.atticHeight || 1;
-  const roofType = params.roofType || "gable";
+  const roofType = params.roofType;
+  let validatedRoofType;
+  try {
+    validatedRoofType = roofType ? validateRoofType(roofType) : null;
+  } catch (error) {
+    console.error("[RoofFlo Airflow]", error.message);
+    validatedRoofType = null;
+  }
 
-  return { halfWidth, halfLength, atticHeight, roofType };
+  return { halfWidth, halfLength, atticHeight, roofType: validatedRoofType };
 }
 
 function getAirflowRoofType() {
   if (!getGeometryStateRef) {
-    return "gable";
+    console.error(
+      "[RoofFlo Airflow] Geometry state reference not available. " +
+      "Airflow simulation cannot proceed."
+    );
+    return null;
   }
 
   const geometry = getGeometryStateRef();
-  return geometry?.currentGeometryParams?.roofType || "gable";
+  const roofType = geometry?.currentGeometryParams?.roofType;
+  
+  if (!roofType) {
+    console.error(
+      "[RoofFlo Airflow] Roof type not found in geometry state. " +
+      "Geometry may not be initialized. Airflow cannot proceed."
+    );
+    return null;
+  }
+  
+  try {
+    return validateRoofType(roofType);
+  } catch (error) {
+    console.error("[RoofFlo Airflow]", error.message);
+    return null;
+  }
 }
 
 function getIntakeInwardDirection(source) {
-  if (getAirflowRoofType() === "shed") {
+  const roofType = getAirflowRoofType();
+  
+  if (roofType === null) {
+    console.error(
+      "[RoofFlo Airflow] Cannot determine intake direction: roof type is invalid. " +
+      "Defaulting to left side direction."
+    );
+    return 1;
+  }
+  
+  if (roofType === "shed") {
     return 1;
   }
 
@@ -1192,7 +1229,16 @@ function enforceParticlePopulationLimit() {
   }
 }
 
-function getRoofLimitY(x, halfWidth, atticHeight, roofType = "gable") {
+function getRoofLimitY(x, halfWidth, atticHeight, roofType) {
+  if (!roofType) {
+    console.error(
+      "[RoofFlo Airflow] getRoofLimitY called without roof type. " +
+      "This may cause incorrect particle visualization."
+    );
+    // Degrade gracefully but error is logged
+    return atticHeight;
+  }
+  
   if (halfWidth <= 0) {
     return atticHeight;
   }
