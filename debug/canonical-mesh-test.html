@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RoofFlo Canonical Mesh Test</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #101317;
+        color: #e8edf5;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      }
+
+      #app {
+        width: 100%;
+        height: 100%;
+      }
+
+      .hud {
+        position: fixed;
+        top: 12px;
+        left: 12px;
+        z-index: 10;
+        background: rgba(16, 19, 23, 0.78);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 8px;
+        padding: 10px 12px;
+        font-size: 12px;
+        line-height: 1.4;
+        backdrop-filter: blur(4px);
+        pointer-events: none;
+      }
+
+      .hud strong {
+        color: #ffffff;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="hud">
+      <div><strong>RoofFlo Canonical Mesh Test</strong></div>
+      <div id="roof-label">loading...</div>
+      <div>Drag to orbit, scroll to zoom</div>
+    </div>
+    <div id="app"></div>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+      }
+    </script>
+
+    <script type="module" src="./canonicalMeshTest.js"></script>
+  </body>
+</html>
