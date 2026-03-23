@@ -4,11 +4,12 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { createGableRoof } from '../modules/roofTypes/gable.js';
 import { createShedRoof } from '../modules/roofTypes/shed.js';
 import { createHipRoof } from '../modules/roofTypes/hip.js';
+import { createThreeDebugObject } from '../modules/geometry/adapters/canonicalToThree.js';
 import { buildAttic } from '../modules/geometry/pipeline/buildAttic.js';
 import { buildMesh } from '../modules/geometry/pipeline/buildMesh.js';
 
 // Switch this constant to: "shed" | "gable" | "hip"
-const TEST_ROOF = 'hip';
+const TEST_ROOF = 'shed';
 
 const SAMPLE_PARAMS = {
   shed: { width: 20, length: 40, pitch: 4, overhang: 0 },
@@ -56,17 +57,6 @@ function buildRoofDefinition(testRoof) {
   throw new Error(`Unsupported TEST_ROOF: ${testRoof}`);
 }
 
-function toBufferGeometry(meshData) {
-  const geometry = new THREE.BufferGeometry();
-
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(meshData.vertices, 3));
-  geometry.setAttribute('normal', new THREE.Float32BufferAttribute(meshData.normals, 3));
-  geometry.setIndex(meshData.indices);
-
-  geometry.computeBoundingSphere();
-  return geometry;
-}
-
 function mountCanonicalRoof() {
   const roofDefinition = buildRoofDefinition(TEST_ROOF);
   const atticResult = buildAttic(roofDefinition);
@@ -76,24 +66,12 @@ function mountCanonicalRoof() {
   }
 
   const meshData = buildMesh(atticResult.faces);
-  const geometry = toBufferGeometry(meshData);
-
-  const roofMaterial = new THREE.MeshStandardMaterial({
-    color: 0x7fb3e0,
-    metalness: 0.05,
-    roughness: 0.82,
-    side: THREE.DoubleSide,
+  const { group, mesh, edgeLines } = createThreeDebugObject({
+    meshData,
+    classifiedEdges: atticResult.classifiedEdges,
   });
 
-  const roofMesh = new THREE.Mesh(geometry, roofMaterial);
-  roofMesh.position.set(0, 0, 0);
-  scene.add(roofMesh);
-
-  const edgeLines = new THREE.LineSegments(
-    new THREE.EdgesGeometry(geometry),
-    new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7 })
-  );
-  scene.add(edgeLines);
+  scene.add(group);
 
   roofLabel.textContent = `TEST_ROOF: ${TEST_ROOF} | faces: ${atticResult.faces.length} | tris: ${meshData.indices.length / 3}`;
 
@@ -101,6 +79,7 @@ function mountCanonicalRoof() {
   console.log('roofDefinition', roofDefinition);
   console.log('atticResult', atticResult);
   console.log('meshData', meshData);
+  console.log('threeDebugObject', { group, mesh, edgeLines });
 }
 
 mountCanonicalRoof();
