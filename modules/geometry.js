@@ -44,6 +44,17 @@ import * as THREE from "three";
 import { scene } from "./scene.js";
 import { validateRoofType } from "../main.js";
 
+// --- Canonical Gable integration (display-only bridge, Phase 1) ---
+import { createGableRoof as _canonicalCreateGableRoof } from "./roofTypes/gable.js";
+import { buildAttic as _canonicalBuildAttic } from "./geometry/pipeline/buildAttic.js";
+import { buildMesh as _canonicalBuildMesh } from "./geometry/pipeline/buildMesh.js";
+import { createThreeDebugObject as _canonicalCreateThreeDebugObject } from "./geometry/adapters/canonicalToThree.js";
+
+// ---- Canonical Gable Toggle ----
+// true  → gable geometry rendered from canonical pipeline (mesh + classified edges)
+// false → existing V3 extruded gable geometry unchanged
+const USE_CANONICAL_GABLE = true;
+
 // Geometry references
 let atticSystem = null;
 let buildingFootprintBase = null;
@@ -955,6 +966,83 @@ function createAtticGeometry({
             roofWidth
         };
     }
+
+    // ---- Canonical Gable path -----------------------------------------------
+    // Active when USE_CANONICAL_GABLE === true and roofType is gable.
+    // Builds mesh + classified edge lines from the canonical pipeline via the
+    // adapter layer.  Vent placement references are intentionally empty here —
+    // this is a display-only integration step.
+    if (USE_CANONICAL_GABLE && normalizedRoofType === "gable") {
+        const canonicalDef = _canonicalCreateGableRoof({
+            width: buildingWidth,
+            length: buildingLength,
+            pitch: pitchRise,
+            overhang: overhangDepth,
+        });
+
+        const atticResult = _canonicalBuildAttic(canonicalDef);
+
+        if (atticResult.isValid) {
+            const meshData = _canonicalBuildMesh(atticResult.faces);
+            const { group } = _canonicalCreateThreeDebugObject({
+                meshData,
+                classifiedEdges: atticResult.classifiedEdges,
+            });
+
+            // Canonical geometry uses origin-at-corner (0→width, 0→length).
+            // Offset to match V3 viewer center-origin convention.
+            group.position.set(-buildingWidth / 2, 0, -buildingLength / 2);
+            group.name = "canonicalGableGroup";
+            atticSystem.add(group);
+        } else {
+            console.warn("[canonical gable] Pipeline validation failed:", atticResult.errors);
+        }
+
+        // Return shape compatible with existing consumers.
+        // Vent placement wiring is deferred to a future integration step.
+        edgeClassification = {
+            roofType: "gable",
+            intakeEdges: roofProfile.edgeClassification?.intakeEdges || [],
+            exhaustEdges: roofProfile.edgeClassification?.exhaustEdges || [],
+            ridgeEdges: roofProfile.edgeClassification?.ridgeEdges || [],
+            hipEdges: [],
+            valleyEdges: [],
+            sideEdges: roofProfile.edgeClassification?.sideEdges || [],
+        };
+        placementReferences = {
+            intake:  { primary: null, targets: [], legacy: [] },
+            exhaust: { primary: null, targets: [], zones: [], legacy: [] },
+            ridge:   null,
+        };
+        intakeZones = { primary: null, legacy: [] };
+
+        return {
+            roofType: "gable",
+            atticSystem,
+            buildingFootprintBase,
+            roofEnvelope:              null,
+            atticCore:                 null,
+            intakePlenum:              null,
+            leftPlenum:                null,
+            rightPlenum:               null,
+            leftIntakePlacement:       null,
+            rightIntakePlacement:      null,
+            leftExhaustZone:           null,
+            rightExhaustZone:          null,
+            leftStaticPlacementLine:   null,
+            rightStaticPlacementLine:  null,
+            ridgeCenterLine:           null,
+            intakeEdgeLine:            null,
+            exhaustEdgeLine:           null,
+            intakeZones,
+            placementReferences,
+            edgeClassification,
+            atticHeight,
+            roofHeightAtBuildingEdge: Math.max(roofHeightAtBuildingEdgeLeft, roofHeightAtBuildingEdgeRight),
+            roofWidth,
+        };
+    }
+    // ---- End canonical Gable path -------------------------------------------
 
     // Keep compatibility with existing return shape
     const roofHeightAtBuildingEdge = Math.max(roofHeightAtBuildingEdgeLeft, roofHeightAtBuildingEdgeRight);

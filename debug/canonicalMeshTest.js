@@ -9,7 +9,7 @@ import { buildAttic } from '../modules/geometry/pipeline/buildAttic.js';
 import { buildMesh } from '../modules/geometry/pipeline/buildMesh.js';
 
 // Switch this constant to: "shed" | "gable" | "hip"
-const TEST_ROOF = 'shed';
+const TEST_ROOF = 'gable';
 
 const SAMPLE_PARAMS = {
   shed: { width: 20, length: 40, pitch: 4, overhang: 0 },
