@@ -70,6 +70,20 @@ function mountCanonicalRoof() {
     meshData,
     classifiedEdges: atticResult.classifiedEdges,
   });
+  // 🔍 DEBUG HOOK (FULL PIPELINE VISIBILITY)
+window.debug = {
+  roofDefinition,
+  atticResult,
+  meshData,
+  classifiedEdges: atticResult.classifiedEdges,
+  references: atticResult.references,
+  zones: atticResult.zones,
+  three: {
+    group,
+    mesh,
+    edgeLines
+  }
+};
 
   scene.add(group);
 
