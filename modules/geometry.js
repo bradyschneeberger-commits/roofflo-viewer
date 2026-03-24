@@ -46,6 +46,8 @@ import { validateRoofType } from "../main.js";
 
 // --- Canonical Gable integration (display-only bridge, Phase 1) ---
 import { createGableRoof as _canonicalCreateGableRoof } from "./roofTypes/gable.js";
+import { createShedRoof as _canonicalCreateShedRoof } from "./roofTypes/shed.js";
+import { createHipRoof as _canonicalCreateHipRoof } from "./roofTypes/hip.js";
 import { buildAttic as _canonicalBuildAttic } from "./geometry/pipeline/buildAttic.js";
 import { buildMesh as _canonicalBuildMesh } from "./geometry/pipeline/buildMesh.js";
 import { createThreeDebugObject as _canonicalCreateThreeDebugObject } from "./geometry/adapters/canonicalToThree.js";
@@ -54,6 +56,16 @@ import { createThreeDebugObject as _canonicalCreateThreeDebugObject } from "./ge
 // true  → gable geometry rendered from canonical pipeline (mesh + classified edges)
 // false → existing V3 extruded gable geometry unchanged
 const USE_CANONICAL_GABLE = true;
+
+// ---- Canonical Shed Toggle ----
+// true  → shed geometry rendered from canonical pipeline (mesh + classified edges)
+// false → existing V3 extruded shed geometry unchanged
+const USE_CANONICAL_SHED = true;
+
+// ---- Canonical Hip Toggle ----
+// true  → hip geometry rendered from canonical pipeline (mesh + classified edges)
+// false → existing V3 hip geometry unchanged
+const USE_CANONICAL_HIP = true;
 
 // Geometry references
 let atticSystem = null;
@@ -76,9 +88,23 @@ let atticHeight = 0;
 let intakeZones = null;
 let placementReferences = null;
 let edgeClassification = null;
+let currentCanonicalRoofGroup = null;
 
 // Optional stored params
 let currentGeometryParams = null;
+
+function setCanonicalRoofGroup(group) {
+    if (!atticSystem || !group) {
+        return;
+    }
+
+    if (currentCanonicalRoofGroup?.parent) {
+        currentCanonicalRoofGroup.parent.remove(currentCanonicalRoofGroup);
+    }
+
+    currentCanonicalRoofGroup = group;
+    atticSystem.add(currentCanonicalRoofGroup);
+}
 
 function createGableRoof({ pitchRise, halfBuildingWidth, halfRoofWidth }) {
     const pitchRun = 12;
@@ -584,6 +610,7 @@ function createAtticGeometry({
     if (atticSystem) {
         scene.remove(atticSystem);
     }
+    currentCanonicalRoofGroup = null;
 
     // Remove old visual-only building footprint base if it exists
     if (buildingFootprintBase) {
@@ -693,7 +720,7 @@ function createAtticGeometry({
         : (roofProfile.roofType === "shed" ? "exhaustEdgeLine" : "ridgeCenterLine");
     currentGeometryParams.hasRidge = Boolean(roofProfile.hasRidge);
 
-    if (roofProfile.roofType === "hip") {
+    if (roofProfile.roofType === "hip" && !USE_CANONICAL_HIP) {
         // Keep geometry dimensions explicit for Hip separation:
         // - buildingFootprint drives attic core extents
         // - roofFootprint drives outer roof shell extents
@@ -967,6 +994,80 @@ function createAtticGeometry({
         };
     }
 
+    // ---- Canonical Hip path -------------------------------------------------
+    // Active when USE_CANONICAL_HIP === true and roofType is hip.
+    // Builds mesh + classified edge lines from the canonical pipeline via the
+    // adapter layer. Vent placement wiring is intentionally deferred.
+    if (USE_CANONICAL_HIP && normalizedRoofType === "hip") {
+        const canonicalDef = _canonicalCreateHipRoof({
+            width: buildingWidth,
+            length: buildingLength,
+            pitch: pitchRise,
+            overhang: overhangDepth,
+        });
+
+        const atticResult = _canonicalBuildAttic(canonicalDef);
+
+        if (atticResult.isValid) {
+            const meshData = _canonicalBuildMesh(atticResult.faces);
+            const { group } = _canonicalCreateThreeDebugObject({
+                meshData,
+                classifiedEdges: atticResult.classifiedEdges,
+            });
+
+            // Canonical geometry uses origin-at-corner (0→width, 0→length).
+            // Offset to match V3 viewer center-origin convention.
+            group.position.set(-buildingWidth / 2, 0, -buildingLength / 2);
+            group.name = "canonicalHipGroup";
+            setCanonicalRoofGroup(group);
+        } else {
+            console.warn("[canonical hip] Pipeline validation failed:", atticResult.errors);
+        }
+
+        edgeClassification = {
+            roofType: "hip",
+            intakeEdges: roofProfile.edgeClassification?.intakeEdges || [],
+            exhaustEdges: roofProfile.edgeClassification?.exhaustEdges || [],
+            ridgeEdges: roofProfile.edgeClassification?.ridgeEdges || [],
+            hipEdges: roofProfile.edgeClassification?.hipEdges || [],
+            valleyEdges: roofProfile.edgeClassification?.valleyEdges || [],
+            sideEdges: roofProfile.edgeClassification?.sideEdges || [],
+        };
+        placementReferences = {
+            intake: { primary: null, targets: [], legacy: [] },
+            exhaust: { primary: null, targets: [], zones: [], legacy: [] },
+            ridge: null,
+        };
+        intakeZones = { primary: null, legacy: [] };
+
+        return {
+            roofType: "hip",
+            atticSystem,
+            buildingFootprintBase,
+            roofEnvelope: null,
+            atticCore: null,
+            intakePlenum: null,
+            leftPlenum: null,
+            rightPlenum: null,
+            leftIntakePlacement: null,
+            rightIntakePlacement: null,
+            leftExhaustZone: null,
+            rightExhaustZone: null,
+            leftStaticPlacementLine: null,
+            rightStaticPlacementLine: null,
+            ridgeCenterLine: null,
+            intakeEdgeLine: null,
+            exhaustEdgeLine: null,
+            intakeZones,
+            placementReferences,
+            edgeClassification,
+            atticHeight,
+            roofHeightAtBuildingEdge: Math.max(roofHeightAtBuildingEdgeLeft, roofHeightAtBuildingEdgeRight),
+            roofWidth,
+        };
+    }
+    // ---- End canonical Hip path ---------------------------------------------
+
     // ---- Canonical Gable path -----------------------------------------------
     // Active when USE_CANONICAL_GABLE === true and roofType is gable.
     // Builds mesh + classified edge lines from the canonical pipeline via the
@@ -993,7 +1094,7 @@ function createAtticGeometry({
             // Offset to match V3 viewer center-origin convention.
             group.position.set(-buildingWidth / 2, 0, -buildingLength / 2);
             group.name = "canonicalGableGroup";
-            atticSystem.add(group);
+            setCanonicalRoofGroup(group);
         } else {
             console.warn("[canonical gable] Pipeline validation failed:", atticResult.errors);
         }
@@ -1043,6 +1144,80 @@ function createAtticGeometry({
         };
     }
     // ---- End canonical Gable path -------------------------------------------
+
+    // ---- Canonical Shed path ------------------------------------------------
+    // Active when USE_CANONICAL_SHED === true and roofType is shed.
+    // Builds mesh + classified edge lines from the canonical pipeline via the
+    // adapter layer. Vent placement wiring is intentionally deferred.
+    if (USE_CANONICAL_SHED && normalizedRoofType === "shed") {
+        const canonicalDef = _canonicalCreateShedRoof({
+            width: buildingWidth,
+            length: buildingLength,
+            pitch: pitchRise,
+            overhang: overhangDepth,
+        });
+
+        const atticResult = _canonicalBuildAttic(canonicalDef);
+
+        if (atticResult.isValid) {
+            const meshData = _canonicalBuildMesh(atticResult.faces);
+            const { group } = _canonicalCreateThreeDebugObject({
+                meshData,
+                classifiedEdges: atticResult.classifiedEdges,
+            });
+
+            // Canonical geometry uses origin-at-corner (0→width, 0→length).
+            // Offset to match V3 viewer center-origin convention.
+            group.position.set(-buildingWidth / 2, 0, -buildingLength / 2);
+            group.name = "canonicalShedGroup";
+            setCanonicalRoofGroup(group);
+        } else {
+            console.warn("[canonical shed] Pipeline validation failed:", atticResult.errors);
+        }
+
+        edgeClassification = {
+            roofType: "shed",
+            intakeEdges: roofProfile.edgeClassification?.intakeEdges || [],
+            exhaustEdges: roofProfile.edgeClassification?.exhaustEdges || [],
+            ridgeEdges: roofProfile.edgeClassification?.ridgeEdges || [],
+            hipEdges: [],
+            valleyEdges: [],
+            sideEdges: roofProfile.edgeClassification?.sideEdges || [],
+        };
+        placementReferences = {
+            intake: { primary: null, targets: [], legacy: [] },
+            exhaust: { primary: null, targets: [], zones: [], legacy: [] },
+            ridge: null,
+        };
+        intakeZones = { primary: null, legacy: [] };
+
+        return {
+            roofType: "shed",
+            atticSystem,
+            buildingFootprintBase,
+            roofEnvelope: null,
+            atticCore: null,
+            intakePlenum: null,
+            leftPlenum: null,
+            rightPlenum: null,
+            leftIntakePlacement: null,
+            rightIntakePlacement: null,
+            leftExhaustZone: null,
+            rightExhaustZone: null,
+            leftStaticPlacementLine: null,
+            rightStaticPlacementLine: null,
+            ridgeCenterLine: null,
+            intakeEdgeLine: null,
+            exhaustEdgeLine: null,
+            intakeZones,
+            placementReferences,
+            edgeClassification,
+            atticHeight,
+            roofHeightAtBuildingEdge: Math.max(roofHeightAtBuildingEdgeLeft, roofHeightAtBuildingEdgeRight),
+            roofWidth,
+        };
+    }
+    // ---- End canonical Shed path --------------------------------------------
 
     // Keep compatibility with existing return shape
     const roofHeightAtBuildingEdge = Math.max(roofHeightAtBuildingEdgeLeft, roofHeightAtBuildingEdgeRight);
@@ -1601,6 +1776,7 @@ function getGeometryState() {
         placementReferences,
         edgeClassification,
         atticHeight,
+        currentCanonicalRoofGroup,
         currentGeometryParams
     };
 }
@@ -1627,5 +1803,6 @@ export {
     intakeZones,
     placementReferences,
     edgeClassification,
-    atticHeight
+    atticHeight,
+    currentCanonicalRoofGroup
 };
