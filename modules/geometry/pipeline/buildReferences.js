@@ -35,6 +35,54 @@
 
 /** @typedef {import('../types.js').ClassifiedEdge}      ClassifiedEdge      */
 /** @typedef {import('../types.js').PlacementReferences} PlacementReferences */
+/** @typedef {import('../types.js').RoofDefinition}      RoofDefinition      */
+
+function cloneVertex(vertex) {
+  return {
+    x: vertex.x,
+    y: vertex.y,
+    z: vertex.z,
+  };
+}
+
+function normalizeShedHighEdgeForExhaust(edge, roofDefinition) {
+  const metadata = roofDefinition?.metadata ?? {};
+  const width = Number(metadata.width);
+  const length = Number(metadata.length);
+  const pitch = Number(metadata.pitch);
+  const overhang = Math.max(0, Number(metadata.overhang) || 0);
+
+  if (
+    !Number.isFinite(width) ||
+    !Number.isFinite(length) ||
+    !Number.isFinite(pitch)
+  ) {
+    return edge;
+  }
+
+  const riseHeight = (width * pitch) / 12;
+  const normalizedEdge = {
+    ...edge,
+    start: { x: width, y: riseHeight, z: 0 },
+    end: { x: width, y: riseHeight, z: length },
+    metadata: {
+      ...(edge.metadata ?? {}),
+      derivedFrom: 'shed-enclosed-high-wall',
+      excludesOverhangArea: true,
+      enclosedBoundary: {
+        start: { x: width, y: riseHeight, z: 0 },
+        end: { x: width, y: riseHeight, z: length },
+      },
+      outerRoofEdge: {
+        start: cloneVertex(edge.start),
+        end: cloneVertex(edge.end),
+      },
+      overhangDepth: overhang,
+    },
+  };
+
+  return normalizedEdge;
+}
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -47,6 +95,7 @@
  * `classification` field.  The input array is not mutated.
  *
  * @param {ClassifiedEdge[]} classifiedEdges - Output of classifyEdges()
+ * @param {RoofDefinition} [roofDefinition]  - Source roof definition metadata
  * @returns {PlacementReferences}
  *
  * @example
@@ -54,9 +103,9 @@
  * // Gable → intake: [2 eave], ridge: [1 ridge],   exhaust: [1 ridge]
  * // Hip   → intake: [4 eave], ridge: [1 ridge],   exhaust: [1 ridge]
  *
- * const refs = buildReferences(classifiedEdges);
+ * const refs = buildReferences(classifiedEdges, roofDefinition);
  */
-export function buildReferences(classifiedEdges) {
+export function buildReferences(classifiedEdges, roofDefinition = null) {
   // ---------------------------------------------------------------------------
   // intake — eave edges
   //
@@ -86,9 +135,15 @@ export function buildReferences(classifiedEdges) {
   // Both classifications can coexist in theory (future multi-ridge shapes),
   // so we concatenate rather than choose one or the other.
   // ---------------------------------------------------------------------------
-  const exhaust = classifiedEdges.filter(
-    e => e.classification === 'ridge' || e.classification === 'highEdge'
-  );
+  const exhaust = classifiedEdges
+    .filter(e => e.classification === 'ridge' || e.classification === 'highEdge')
+    .map(edge => {
+      if (roofDefinition?.roofType === 'shed' && edge.classification === 'highEdge') {
+        return normalizeShedHighEdgeForExhaust(edge, roofDefinition);
+      }
+
+      return edge;
+    });
 
   // Hip edges and rake edges are not included in any reference bucket at this
   // stage.  Hip vents are a potential future extension (add hip edges to intake

@@ -40,6 +40,11 @@ import {
   calculateInstalledVentilation
 } from "./calculations.js";
 import { validateRoofType } from "../main.js";
+import {
+  initContainment,
+  getRoofContainmentHeight,
+  getContainmentDiagnostics
+} from "./geometry/adapters/canonicalContainment.js";
 
 const STALE_AIR_COLOR = 0xffa500;
 const FRESH_AIR_COLOR = 0x66ccff;
@@ -84,6 +89,12 @@ const RIDGE_EXIT_FADE_DELAY = 0.35;
 const RIDGE_EXIT_EXTRA_FADE_DELAY = 0.45;
 const RIDGE_EXIT_EXTRA_LIFE = 0.75;
 const RIDGE_EXIT_EXTRA_REMOVAL_DISTANCE = 0.45;
+const ATTIC_BOUNDARY_PADDING = 0.12;
+const ATTIC_FLOOR_PADDING = 0.03;
+const ATTIC_ROOF_PADDING = 0.06;
+const CEILING_SOFT_ZONE = 0.22;
+const CEILING_VELOCITY_DAMPING = 0.24;
+const WALL_VELOCITY_DAMPING = 0.18;
 
 const PARTICLE_GEOMETRY = new THREE.SphereGeometry(1, 8, 8);
 const STALE_AIR_TINT = new THREE.Color(STALE_AIR_COLOR);
@@ -114,6 +125,9 @@ const TEMP_VEC_1 = new THREE.Vector3();
 const TEMP_VEC_2 = new THREE.Vector3();
 const TEMP_VEC_3 = new THREE.Vector3();
 const TEMP_VEC_4 = new THREE.Vector3();
+const TEMP_VEC_5 = new THREE.Vector3();
+const TEMP_VEC_6 = new THREE.Vector3();
+const TEMP_VEC_7 = new THREE.Vector3();
 
 let airflowGroup = null;
 let airflowTrailGroup = null;
@@ -184,6 +198,7 @@ function initializeAirflowVisualization(context = {}) {
     return false;
   }
 
+  initContainment(getGeometryStateRef);
   ensureAirflowGroup();
   seedInitialTrappedAir();
   return true;
@@ -425,63 +440,78 @@ function applyParticleVisuals(particle) {
   particle.mesh.scale.setScalar(targetScale);
 }
 
-function getRidgeNearestPoint(vent, fromPosition) {
-  const segment = vent.end.clone().sub(vent.start);
-  const segmentLengthSq = segment.lengthSq();
-  if (segmentLengthSq <= 0.00001) {
-    return vent.position.clone();
-  }
-
-  const projection = fromPosition.clone().sub(vent.start).dot(segment) / segmentLengthSq;
-  const t = THREE.MathUtils.clamp(projection, 0, 1);
-  return vent.start.clone().addScaledVector(segment, t);
-}
-
-function collectExhaustTargets(ventState, fromPosition) {
-  const targets = [];
-
-  for (const vent of ventState.staticVents) {
-    const normal = UP.clone().applyQuaternion(vent.orientation).normalize();
-    targets.push({
-      kind: "static",
-      position: vent.position.clone(),
-      normal,
-      vent
-    });
-  }
-
-  for (const vent of ventState.ridgeVents) {
-    const nearestPoint = getRidgeNearestPoint(vent, fromPosition);
-    targets.push({
-      kind: "ridge",
-      position: nearestPoint,
-      normal: new THREE.Vector3(0, 1, 0),
-      vent
-    });
-  }
-
-  return targets;
-}
-
 function getNearestExhaustTarget(position, ventState) {
-  const targets = collectExhaustTargets(ventState, position);
-  if (!targets.length) {
+  const staticVents = ventState.staticVents || [];
+  const ridgeVents = ventState.ridgeVents || [];
+
+  if (!staticVents.length && !ridgeVents.length) {
     return null;
   }
 
-  let nearest = targets[0];
-  let nearestDistanceSq = position.distanceToSquared(nearest.position);
+  let nearestVent = null;
+  let nearestKind = null;
+  let nearestDistanceSq = Number.POSITIVE_INFINITY;
+  let nearestRidgeT = 0;
 
-  for (let i = 1; i < targets.length; i += 1) {
-    const current = targets[i];
-    const distanceSq = position.distanceToSquared(current.position);
+  for (let i = 0; i < staticVents.length; i += 1) {
+    const vent = staticVents[i];
+    const distanceSq = position.distanceToSquared(vent.position);
     if (distanceSq < nearestDistanceSq) {
-      nearest = current;
+      nearestVent = vent;
+      nearestKind = "static";
       nearestDistanceSq = distanceSq;
     }
   }
 
-  return nearest;
+  for (let i = 0; i < ridgeVents.length; i += 1) {
+    const vent = ridgeVents[i];
+    const segment = TEMP_VEC_5.copy(vent.end).sub(vent.start);
+    const segmentLengthSq = segment.lengthSq();
+
+    let ridgeT = 0;
+    let distanceSq = 0;
+    if (segmentLengthSq <= 0.00001) {
+      distanceSq = position.distanceToSquared(vent.position);
+    } else {
+      ridgeT = THREE.MathUtils.clamp(
+        TEMP_VEC_6.copy(position).sub(vent.start).dot(segment) / segmentLengthSq,
+        0,
+        1
+      );
+      TEMP_VEC_7.copy(vent.start).addScaledVector(segment, ridgeT);
+      distanceSq = position.distanceToSquared(TEMP_VEC_7);
+    }
+
+    if (distanceSq < nearestDistanceSq) {
+      nearestVent = vent;
+      nearestKind = "ridge";
+      nearestDistanceSq = distanceSq;
+      nearestRidgeT = ridgeT;
+    }
+  }
+
+  if (!nearestVent || !nearestKind) {
+    return null;
+  }
+
+  if (nearestKind === "static") {
+    return {
+      kind: "static",
+      position: nearestVent.position.clone(),
+      normal: UP.clone().applyQuaternion(nearestVent.orientation).normalize(),
+      vent: nearestVent
+    };
+  }
+
+  return {
+    kind: "ridge",
+    position: nearestVent.start.clone().addScaledVector(
+      nearestVent.end.clone().sub(nearestVent.start),
+      nearestRidgeT
+    ),
+    normal: UP.clone(),
+    vent: nearestVent
+  };
 }
 
 function getRandomPointOnStaticVent(target) {
@@ -1045,7 +1075,7 @@ function getRandomPointInsideAttic(bounds) {
   const zPadding = 0.3;
   const x = THREE.MathUtils.lerp(-bounds.halfWidth + xPadding, bounds.halfWidth - xPadding, Math.random());
   const z = THREE.MathUtils.lerp(-bounds.halfLength + zPadding, bounds.halfLength - zPadding, Math.random());
-  const roofLimit = getRoofLimitY(x, bounds.halfWidth, bounds.atticHeight, bounds.roofType);
+  const roofLimit = getRoofContainmentHeight(x, z, bounds);
   const maxY = Math.max(0.2, roofLimit - 0.08);
   const y = THREE.MathUtils.lerp(0.06, maxY, Math.random());
   return new THREE.Vector3(x, y, z);
@@ -1229,46 +1259,46 @@ function enforceParticlePopulationLimit() {
   }
 }
 
-function getRoofLimitY(x, halfWidth, atticHeight, roofType) {
-  if (!roofType) {
-    console.error(
-      "[RoofFlo Airflow] getRoofLimitY called without roof type. " +
-      "This may cause incorrect particle visualization."
-    );
-    // Degrade gracefully but error is logged
-    return atticHeight;
-  }
-  
-  if (halfWidth <= 0) {
-    return atticHeight;
-  }
 
-  if (roofType === "shed") {
-    const normalized = THREE.MathUtils.clamp((x + halfWidth) / (halfWidth * 2), 0, 1);
-    return atticHeight * normalized;
-  }
-
-  const normalized = Math.min(1, Math.abs(x) / halfWidth);
-  return atticHeight * (1 - normalized);
-}
 
 function confineToAttic(particle, bounds) {
-  const padding = 0.12;
+  const minZ = -bounds.halfLength + ATTIC_BOUNDARY_PADDING;
+  const maxZ = bounds.halfLength - ATTIC_BOUNDARY_PADDING;
+  const minX = -bounds.halfWidth + ATTIC_BOUNDARY_PADDING;
+  const maxX = bounds.halfWidth - ATTIC_BOUNDARY_PADDING;
 
-  particle.position.z = THREE.MathUtils.clamp(
-    particle.position.z,
-    -bounds.halfLength + padding,
-    bounds.halfLength - padding
-  );
+  const clampedZ = THREE.MathUtils.clamp(particle.position.z, minZ, maxZ);
+  if (clampedZ !== particle.position.z) {
+    particle.position.z = clampedZ;
+    if ((clampedZ === minZ && particle.velocity.z < 0) || (clampedZ === maxZ && particle.velocity.z > 0)) {
+      particle.velocity.z *= WALL_VELOCITY_DAMPING;
+    }
+  }
 
-  particle.position.x = THREE.MathUtils.clamp(
-    particle.position.x,
-    -bounds.halfWidth + padding,
-    bounds.halfWidth - padding
-  );
+  const clampedX = THREE.MathUtils.clamp(particle.position.x, minX, maxX);
+  if (clampedX !== particle.position.x) {
+    particle.position.x = clampedX;
+    if ((clampedX === minX && particle.velocity.x < 0) || (clampedX === maxX && particle.velocity.x > 0)) {
+      particle.velocity.x *= WALL_VELOCITY_DAMPING;
+    }
+  }
 
-  const roofLimit = getRoofLimitY(particle.position.x, bounds.halfWidth, bounds.atticHeight, bounds.roofType);
-  particle.position.y = THREE.MathUtils.clamp(particle.position.y, 0.03, Math.max(0.2, roofLimit - 0.06));
+  const roofLimit = getRoofContainmentHeight(particle.position.x, particle.position.z, bounds);
+  const maxY = Math.max(0.2, roofLimit - ATTIC_ROOF_PADDING);
+  const clearance = maxY - particle.position.y;
+
+  if (clearance <= 0) {
+    const overflow = -clearance;
+    particle.position.y = Math.max(ATTIC_FLOOR_PADDING, maxY - Math.min(0.025, overflow * 0.35));
+    if (particle.velocity.y > 0) {
+      particle.velocity.y *= CEILING_VELOCITY_DAMPING;
+    }
+  } else if (clearance < CEILING_SOFT_ZONE && particle.velocity.y > 0) {
+    const ceilingProximity = 1 - THREE.MathUtils.clamp(clearance / CEILING_SOFT_ZONE, 0, 1);
+    particle.velocity.y *= THREE.MathUtils.lerp(1, CEILING_VELOCITY_DAMPING, ceilingProximity);
+  }
+
+  particle.position.y = THREE.MathUtils.clamp(particle.position.y, ATTIC_FLOOR_PADDING, maxY);
 }
 
 function getRandomIntakeSpawnPosition(intakeVent) {
@@ -1723,5 +1753,6 @@ export {
   resetAirflowSimulation,
   updateAirflow,
   isSimulationRunning,
-  clearParticles
+  clearParticles,
+  getContainmentDiagnostics
 };

@@ -82,7 +82,7 @@ export function buildAttic(roofDefinition) {
     // Stage 3: Classify each edge (eave/ridge/hip/rake/highEdge/unknown).
     classifiedEdges = classifyEdges(edges);
     // Stage 4: Group classified edges into intake/exhaust/ridge references.
-    references = buildReferences(classifiedEdges);
+    references = buildReferences(classifiedEdges, roofDefinition);
     // Stage 5: Derive visual zone descriptors from references.
     zones = buildZones(references);
   }

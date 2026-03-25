@@ -50,7 +50,10 @@ import { createShedRoof as _canonicalCreateShedRoof } from "./roofTypes/shed.js"
 import { createHipRoof as _canonicalCreateHipRoof } from "./roofTypes/hip.js";
 import { buildAttic as _canonicalBuildAttic } from "./geometry/pipeline/buildAttic.js";
 import { buildMesh as _canonicalBuildMesh } from "./geometry/pipeline/buildMesh.js";
-import { createThreeDebugObject as _canonicalCreateThreeDebugObject } from "./geometry/adapters/canonicalToThree.js";
+import {
+    createThreeDebugObject as _canonicalCreateThreeDebugObject,
+    createThreePlacementObjects as _canonicalCreateThreePlacementObjects
+} from "./geometry/adapters/canonicalToThree.js";
 
 // ---- Canonical Gable Toggle ----
 // true  → gable geometry rendered from canonical pipeline (mesh + classified edges)
@@ -92,6 +95,93 @@ let currentCanonicalRoofGroup = null;
 
 // Optional stored params
 let currentGeometryParams = null;
+
+function applyCanonicalPlacementReferences({ group, roofType, placementObjects }) {
+    const intakeTargets = placementObjects?.intakeTargets || [];
+    const intakeZoneTargets = placementObjects?.intakeZones || [];
+    const staticTargets = placementObjects?.staticTargets || [];
+    const exhaustZoneTargets = placementObjects?.exhaustZones || [];
+    const ridgeLineObject = placementObjects?.ridgeLine || null;
+
+    for (const target of intakeTargets) {
+        group.add(target.line);
+    }
+
+    for (const target of intakeZoneTargets) {
+        group.add(target.zone);
+    }
+
+    for (const target of staticTargets) {
+        group.add(target.line);
+    }
+
+    for (const target of exhaustZoneTargets) {
+        group.add(target.zone);
+    }
+
+    if (ridgeLineObject) {
+        group.add(ridgeLineObject);
+    }
+
+    const intakeLines = intakeTargets.map((target) => target.line);
+    const staticLines = staticTargets.map((target) => target.line);
+    const intakeZoneMeshes = intakeZoneTargets.map((target) => target.zone);
+    const exhaustZoneMeshes = exhaustZoneTargets.map((target) => target.zone);
+
+    leftIntakePlacement = intakeLines[0] || null;
+    rightIntakePlacement = intakeLines[1] || null;
+    leftStaticPlacementLine = staticLines[0] || null;
+    rightStaticPlacementLine = staticLines[1] || null;
+    leftExhaustZone = exhaustZoneMeshes[0] || null;
+    rightExhaustZone = exhaustZoneMeshes[1] || exhaustZoneMeshes[0] || null;
+    ridgeCenterLine = ridgeLineObject;
+    intakeEdgeLine = intakeLines[0] || null;
+    exhaustEdgeLine = staticLines[0] || ridgeLineObject || null;
+    intakeZones = {
+        primary: intakeZoneMeshes[0] || null,
+        zones: intakeZoneMeshes,
+        perimeter: intakeLines,
+        references: intakeLines,
+        legacy: intakeZoneMeshes,
+    };
+
+    placementReferences = {
+        intake: {
+            primary: intakeLines[0] || null,
+            secondary: intakeLines[1] || null,
+            targets: intakeTargets.map((target) => {
+                const matchingZone = intakeZoneTargets.find((zt) => zt.key === target.key);
+                return {
+                    key: target.key,
+                    line: target.line,
+                    zone: matchingZone?.zone || null,
+                };
+            }),
+            perimeter: intakeLines,
+            legacy: intakeLines,
+        },
+        exhaust: {
+            primary: staticLines[0] || ridgeLineObject || null,
+            secondary: staticLines[1] || null,
+            ridge: ridgeLineObject,
+            targets: staticTargets.map((target) => ({
+                key: target.key,
+                line: target.line,
+                zone: target.zone,
+            })),
+            zones: exhaustZoneMeshes,
+            legacy: staticLines,
+        },
+        ridge: ridgeLineObject,
+    };
+
+    if (roofType === "shed") {
+        rightIntakePlacement = null;
+        rightStaticPlacementLine = staticLines[0] || null;
+        rightExhaustZone = exhaustZoneMeshes[0] || null;
+        intakeZones.primary = intakeZoneMeshes[0] || null;
+    }
+}
 
 function setCanonicalRoofGroup(group) {
     if (!atticSystem || !group) {
@@ -1014,6 +1104,15 @@ function createAtticGeometry({
                 meshData,
                 classifiedEdges: atticResult.classifiedEdges,
             });
+            const placementObjects = _canonicalCreateThreePlacementObjects({
+                roofDefinition: canonicalDef,
+                references: atticResult.references,
+            });
+            applyCanonicalPlacementReferences({
+                group,
+                roofType: "hip",
+                placementObjects,
+            });
 
             // Canonical geometry uses origin-at-corner (0→width, 0→length).
             // Offset to match V3 viewer center-origin convention.
@@ -1033,13 +1132,6 @@ function createAtticGeometry({
             valleyEdges: roofProfile.edgeClassification?.valleyEdges || [],
             sideEdges: roofProfile.edgeClassification?.sideEdges || [],
         };
-        placementReferences = {
-            intake: { primary: null, targets: [], legacy: [] },
-            exhaust: { primary: null, targets: [], zones: [], legacy: [] },
-            ridge: null,
-        };
-        intakeZones = { primary: null, legacy: [] };
-
         return {
             roofType: "hip",
             atticSystem,
@@ -1089,6 +1181,15 @@ function createAtticGeometry({
                 meshData,
                 classifiedEdges: atticResult.classifiedEdges,
             });
+            const placementObjects = _canonicalCreateThreePlacementObjects({
+                roofDefinition: canonicalDef,
+                references: atticResult.references,
+            });
+            applyCanonicalPlacementReferences({
+                group,
+                roofType: "gable",
+                placementObjects,
+            });
 
             // Canonical geometry uses origin-at-corner (0→width, 0→length).
             // Offset to match V3 viewer center-origin convention.
@@ -1110,13 +1211,6 @@ function createAtticGeometry({
             valleyEdges: [],
             sideEdges: roofProfile.edgeClassification?.sideEdges || [],
         };
-        placementReferences = {
-            intake:  { primary: null, targets: [], legacy: [] },
-            exhaust: { primary: null, targets: [], zones: [], legacy: [] },
-            ridge:   null,
-        };
-        intakeZones = { primary: null, legacy: [] };
-
         return {
             roofType: "gable",
             atticSystem,
@@ -1165,6 +1259,15 @@ function createAtticGeometry({
                 meshData,
                 classifiedEdges: atticResult.classifiedEdges,
             });
+            const placementObjects = _canonicalCreateThreePlacementObjects({
+                roofDefinition: canonicalDef,
+                references: atticResult.references,
+            });
+            applyCanonicalPlacementReferences({
+                group,
+                roofType: "shed",
+                placementObjects,
+            });
 
             // Canonical geometry uses origin-at-corner (0→width, 0→length).
             // Offset to match V3 viewer center-origin convention.
@@ -1184,13 +1287,6 @@ function createAtticGeometry({
             valleyEdges: [],
             sideEdges: roofProfile.edgeClassification?.sideEdges || [],
         };
-        placementReferences = {
-            intake: { primary: null, targets: [], legacy: [] },
-            exhaust: { primary: null, targets: [], zones: [], legacy: [] },
-            ridge: null,
-        };
-        intakeZones = { primary: null, legacy: [] };
-
         return {
             roofType: "shed",
             atticSystem,

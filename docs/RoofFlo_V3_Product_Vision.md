@@ -71,7 +71,85 @@ PARKED IDEAS (FUTURE)
 - Help contractors close jobs
 - Translate system improvements into homeowner value
 
+### 7. Parked Idea: Custom Overhang Settings (Per Roof Edge)
+
+### Summary
+The current system uses a single global `overhangDepth` applied uniformly to all roof edges. This is a strong default and matches many real-world homes, but it does not account for roofs where overhang dimensions vary by side.
+
+This feature is **parked for future implementation** and is not part of the current active development lane.
+
 ---
+
+### Why This Matters
+Supporting per-edge overhang values would improve:
+
+- Accuracy of roof geometry representation  
+- Correctness of intake and exhaust zone generation  
+- Proper handling of shed roofs with high-side overhangs  
+- Support for asymmetrical and more complex roof designs  
+- Alignment between visual model and real-world construction  
+
+---
+
+### Current Limitation
+- Single `overhangDepth` value applies to all edges  
+- Overhang is not differentiated by edge type (eave, rake, high side, etc.)  
+- Zone logic must currently compensate for this simplification (e.g., excluding exhaust zones from overhang areas)
+
+---
+
+### Future Implementation Direction
+
+Replace:
+- Global `overhangDepth`
+
+With:
+- Per-edge or edge-classified overhang values driven by roof type
+
+#### Example Targets
+
+- **Gable Roof**
+  - Eave overhang
+  - Rake overhang
+
+- **Shed Roof**
+  - Low-side (eave) overhang
+  - High-side overhang
+  - Side overhangs (left/right)
+
+- **Hip Roof**
+  - Per-edge overhang values OR
+  - Edge-classified overhang system
+
+---
+
+### System Impact (Important)
+
+This change must propagate through the entire pipeline:
+
+- Canonical geometry generation  
+- Enclosed attic boundary vs outer roof extents  
+- Roof zone generation (intake/exhaust)  
+- Vent placement constraints  
+- Airflow containment and airflow influence systems  
+
+This is not just a UI feature—it is a **core geometry and system architecture expansion**.
+
+---
+
+### Constraints
+
+- Do **not** begin implementation until:
+  - Canonical geometry system is stable  
+  - Roof zones are correct and reliable  
+  - Airflow system is fully aligned and validated  
+
+- Avoid partial implementation (e.g., UI-only or geometry-only changes)
+
+---
+
+### Status
+**Parked — Future Phase**
 
 ----------------------------------------
 LONG-TERM VISION

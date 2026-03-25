@@ -18,6 +18,9 @@
 /** @typedef {import('../types.js').ZoneMap}             ZoneMap             */
 /** @typedef {import('../types.js').VentZone}            VentZone            */
 
+const INTAKE_ZONE_DEPTH_FEET = 3;
+const EXHAUST_ZONE_DEPTH_FEET = 3;
+
 /**
  * Extended zone descriptor returned by this stage.
  *
@@ -51,18 +54,30 @@
  * @returns {VisualVentZone[]}
  */
 function mapEdgesToZones(edges, zoneType) {
+  const depth = zoneType === 'ridge'
+    ? null
+    : (zoneType === 'intake' ? INTAKE_ZONE_DEPTH_FEET : EXHAUST_ZONE_DEPTH_FEET);
+
   return edges.map((edge, index) => ({
     id: `${zoneType}-zone-${index}`,
     sourceEdgeId: edge.id,
     zoneType,
     start: { ...edge.start },
     end: { ...edge.end },
-    depth: null,
+    depth,
     metadata: {
       derivedFrom: 'reference-edge',
-      placeholderDepth: true,
+      placeholderDepth: depth == null,
+      depthFeet: depth,
       edgeKind: edge.kind ?? null,
       edgeClassification: edge.classification ?? null,
+      zoneRule: zoneType === 'intake'
+        ? 'eave-inset-strip'
+        : (zoneType === 'exhaust' ? 'high-reference-inset-strip' : 'ridge-line-reference'),
+      excludesOverhangArea: zoneType === 'exhaust'
+        ? Boolean(edge?.metadata?.excludesOverhangArea)
+        : false,
+      ...(edge.metadata ?? {}),
     },
   }));
 }

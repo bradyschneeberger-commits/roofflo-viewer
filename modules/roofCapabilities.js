@@ -48,7 +48,7 @@ const ROOF_TYPE_CAPABILITIES = {
     hip: {
         placement: {
             intake: true,
-            static: false,
+            static: true,
             ridge: { requiresRidgeReference: true }
         },
         presets: {
@@ -58,12 +58,12 @@ const ROOF_TYPE_CAPABILITIES = {
         },
         restore: {
             intake: true,
-            static: false,
+            static: true,
             ridge: { requiresRidgeReference: true }
         },
         references: {
             intakeTargets: true,
-            staticTargets: false,
+            staticTargets: true,
             ridgeReference: { requiredFor: ["placement", "restore"] }
         }
     }

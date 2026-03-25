@@ -195,6 +195,8 @@ let draggingSnapshotId = null;
 let importedAtticArea = null;
 let calculationSource = "geometry"; // "calculator" | "geometry"
 const GEOMETRY_MATCH_TOLERANCE_SQFT = 10;
+const DIMENSION_CHANGE_AIRFLOW_RESET_DELAY_MS = 150;
+let pendingDimensionAirflowResetTimer = null;
 let isPresentationMode = false;
 let presentationStepIndex = 0;
 let presentationBaseSnapshot = null;
@@ -2589,6 +2591,25 @@ function onGeometryInputChanged() {
     updateVentStatusMessage();
 }
 
+function scheduleDimensionChangeAirflowReset() {
+    if (pendingDimensionAirflowResetTimer) {
+        clearTimeout(pendingDimensionAirflowResetTimer);
+    }
+
+    pendingDimensionAirflowResetTimer = setTimeout(() => {
+        pendingDimensionAirflowResetTimer = null;
+        // Reuse the same airflow reset path as the Reset Model flow, but
+        // without clearing vents or other UI/model state.
+        resetAirflowSimulation();
+    }, DIMENSION_CHANGE_AIRFLOW_RESET_DELAY_MS);
+}
+
+function onGeometryDimensionInputChanged() {
+    onGeometryInputChanged();
+    // Ensure particles are redistributed against the updated geometry bounds.
+    scheduleDimensionChangeAirflowReset();
+}
+
 function onVentRuleChanged() {
     selectedVentilationRule = ventRuleSelect?.value || "1/150";
     currentLayoutSource = "manual";
@@ -3068,8 +3089,8 @@ syncSetupOverview({ roofType: selectedRoofType });
 refreshResultsPanel();
 updateVentStatusMessage({ forceReveal: true });
 
-houseWidthInput?.addEventListener("input", onGeometryInputChanged);
-houseLengthInput?.addEventListener("input", onGeometryInputChanged);
+houseWidthInput?.addEventListener("input", onGeometryDimensionInputChanged);
+houseLengthInput?.addEventListener("input", onGeometryDimensionInputChanged);
 roofPitchRiseInput?.addEventListener("input", onGeometryInputChanged);
 overhangDepthInput?.addEventListener("input", onGeometryInputChanged);
 ventRuleSelect?.addEventListener("change", onVentRuleChanged);
