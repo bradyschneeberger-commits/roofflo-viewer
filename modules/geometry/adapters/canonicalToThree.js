@@ -171,6 +171,10 @@ function createZoneMeshFromEdge(edge, face, name, depthFeet, color) {
   return mesh;
 }
 
+function buildCenteredZoneSnapLineEdge(edge, face, zoneDepthFeet) {
+  return buildInsetEdgePoints(edge, face, zoneDepthFeet * 0.5);
+}
+
 function resolveIntakeKey(edge, roofType, midpoint, bounds) {
   if (roofType === 'shed') {
     return 'low';
@@ -203,6 +207,23 @@ function resolveStaticKey(faceId, roofType) {
   }
 
   return 'static';
+}
+
+function resolveExhaustFaceIds(edge, roofType) {
+  const faceIds = Array.isArray(edge?.faceIds) ? edge.faceIds : [];
+  if (!faceIds.length) {
+    return [];
+  }
+
+  if (edge.classification === 'ridge') {
+    return faceIds;
+  }
+
+  if (roofType === 'hip') {
+    return faceIds;
+  }
+
+  return faceIds.slice(0, 1);
 }
 
 export function createThreePlacementObjects({ roofDefinition, references }) {
@@ -252,21 +273,41 @@ export function createThreePlacementObjects({ roofDefinition, references }) {
       const dz = edge.end.z - edge.start.z;
       return (dx * dx + dy * dy + dz * dz) > 0.000001;
     })
-    .map(({ key, edge, index }) => {
+    .map(({ key, edge, faceId, index }) => {
+      const face = faceMap.get(faceId);
+      if (!face) {
+        return null;
+      }
+
+      const placementEdge = buildCenteredZoneSnapLineEdge(edge, face, INTAKE_ZONE_DEPTH_FEET);
       const line = createReferenceLine(
-        toVector3(edge.start),
-        toVector3(edge.end),
+        placementEdge.start,
+        placementEdge.end,
         `${key}IntakePlacementLine`,
         REFERENCE_LINE_COLOR
       );
-      return { key, line, edge, index };
-    });
+      return {
+        key,
+        line,
+        edge,
+        faceId,
+        index,
+        zoneType: 'intake',
+        edgeType: edge.classification,
+        zoneDepthFeet: INTAKE_ZONE_DEPTH_FEET,
+        snapLineOffsetFeet: INTAKE_ZONE_DEPTH_FEET * 0.5,
+      };
+    })
+    .filter(Boolean);
 
   const intakeZones = intakeZoneSources.map((zoneSource) => ({
     key: zoneSource.key,
     zone: zoneSource.zone,
     edge: zoneSource.edge,
     faceId: zoneSource.faceId,
+    zoneType: 'intake',
+    edgeType: zoneSource.edge?.classification || null,
+    zoneDepthFeet: INTAKE_ZONE_DEPTH_FEET,
   }));
 
   const ridgeEdge = (references?.ridge || [])[0] || null;
@@ -277,8 +318,7 @@ export function createThreePlacementObjects({ roofDefinition, references }) {
   const staticTargets = [];
   const exhaustZones = [];
   for (const edge of references?.exhaust || []) {
-    const faceIds = Array.isArray(edge.faceIds) ? edge.faceIds : [];
-    const candidateFaceIds = edge.classification === 'ridge' ? faceIds : faceIds.slice(0, 1);
+    const candidateFaceIds = resolveExhaustFaceIds(edge, roofType);
 
     for (const faceId of candidateFaceIds) {
       const face = faceMap.get(faceId);
@@ -294,16 +334,37 @@ export function createThreePlacementObjects({ roofDefinition, references }) {
         EXHAUST_ZONE_DEPTH_FEET,
         EXHAUST_ZONE_COLOR
       );
-      exhaustZones.push({ key, zone, edge, faceId });
+      exhaustZones.push({
+        key,
+        zone,
+        edge,
+        faceId,
+        zoneType: 'exhaust',
+        edgeType: edge.classification,
+        zoneDepthFeet: EXHAUST_ZONE_DEPTH_FEET,
+      });
 
-      const placementEdge = buildInsetEdgePoints(edge, face, STATIC_PLACEMENT_DEPTH_FEET);
+      const snapLineOffsetFeet = edge.classification === 'ridge'
+        ? EXHAUST_ZONE_DEPTH_FEET * 0.5
+        : STATIC_PLACEMENT_DEPTH_FEET;
+      const placementEdge = buildInsetEdgePoints(edge, face, snapLineOffsetFeet);
       const line = createReferenceLine(
         placementEdge.start,
         placementEdge.end,
         `${key}StaticPlacementLine`,
         RIDGE_LINE_COLOR
       );
-      staticTargets.push({ key, line, zone, edge, faceId });
+      staticTargets.push({
+        key,
+        line,
+        zone,
+        edge,
+        faceId,
+        zoneType: 'exhaust',
+        edgeType: edge.classification,
+        zoneDepthFeet: EXHAUST_ZONE_DEPTH_FEET,
+        snapLineOffsetFeet,
+      });
     }
   }
 

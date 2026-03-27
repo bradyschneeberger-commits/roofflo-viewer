@@ -85,12 +85,15 @@ let currentPreviewMode = null;
 
 // Variables to store current preview snapped positions for click placement
 let intakePreviewSnappedPoint = null;
+let intakePreviewSurfacePoint = null;
 let intakePreviewPlacementLine = null;
 let staticPreviewSnappedPoint = null;
+let staticPreviewSurfacePoint = null;
 let staticPreviewNormal = null;
 let staticPreviewPlacementLine = null;
 let staticPreviewZoneMesh = null;
 let ridgePreviewSnappedPoint = null;
+let lastSnapDebugSignature = null;
 
 // Validity tracking for preview feedback
 let currentPreviewIsValid = false;
@@ -105,12 +108,15 @@ const INVALID_PREVIEW_COLOR = 0xff0000;
 
 function resetPreviewState() {
 	intakePreviewSnappedPoint = null;
+	intakePreviewSurfacePoint = null;
 	intakePreviewPlacementLine = null;
 	staticPreviewSnappedPoint = null;
+	staticPreviewSurfacePoint = null;
 	staticPreviewNormal = null;
 	staticPreviewPlacementLine = null;
 	staticPreviewZoneMesh = null;
 	ridgePreviewSnappedPoint = null;
+	lastSnapDebugSignature = null;
 	currentPreviewIsValid = false;
 }
 
@@ -287,7 +293,7 @@ function updatePreviewMaterialValidity(mesh, isValid) {
 	}
 }
 
-function updateIntakePreview(hitPoint, placementLine) {
+function updateIntakePreview(hitPoint, placementLine, snapMetadata = null) {
 	if (!ghostPreviewGroup || !ghostIntakeMesh) return;
 
 	const { start, end } = getLineEndpoints(placementLine);
@@ -305,7 +311,16 @@ function updateIntakePreview(hitPoint, placementLine) {
 		ghostIntakeMesh.quaternion.set(0, 0, 0, 1);
 	}
 
-	const snappedPoint = nearestPoint.clone();
+	const previewSurfacePoint = nearestPoint.clone();
+	logSnapInteractionDebug({
+		zoneType: snapMetadata?.zoneType || "intake",
+		faceId: snapMetadata?.faceId || null,
+		edgeType: snapMetadata?.edgeType || null,
+		zoneDepthFeet: snapMetadata?.zoneDepthFeet ?? null,
+		computedSnapLineOffsetFeet: snapMetadata?.snapLineOffsetFeet ?? null,
+		snappedPoint: previewSurfacePoint,
+	});
+	const snappedPoint = previewSurfacePoint.clone();
 	snappedPoint.y += 0.03;
 	ghostIntakeMesh.position.copy(snappedPoint);
 	ghostIntakeMesh.visible = true;
@@ -317,6 +332,7 @@ function updateIntakePreview(hitPoint, placementLine) {
 	ghostPreviewGroup.visible = true;
 	currentPreviewMode = "intake";
 
+	intakePreviewSurfacePoint = previewSurfacePoint.clone();
 	intakePreviewSnappedPoint = snappedPoint.clone();
 	intakePreviewPlacementLine = placementLine;
 
@@ -324,7 +340,7 @@ function updateIntakePreview(hitPoint, placementLine) {
 	updatePreviewMaterialValidity(ghostIntakeMesh, currentPreviewIsValid);
 }
 
-function updateStaticPreview(hitPoint, placementLine, roofNormal, zoneMesh = null) {
+function updateStaticPreview(hitPoint, placementLine, roofNormal, zoneMesh = null, snapMetadata = null) {
 	if (!ghostPreviewGroup || !ghostStaticMesh) return;
 
 	const { start, end } = getLineEndpoints(placementLine);
@@ -338,6 +354,14 @@ function updateStaticPreview(hitPoint, placementLine, roofNormal, zoneMesh = nul
 	);
 
 	const previewSurfacePoint = nearestPoint.clone();
+	logSnapInteractionDebug({
+		zoneType: snapMetadata?.zoneType || "exhaust",
+		faceId: snapMetadata?.faceId || null,
+		edgeType: snapMetadata?.edgeType || null,
+		zoneDepthFeet: snapMetadata?.zoneDepthFeet ?? null,
+		computedSnapLineOffsetFeet: snapMetadata?.snapLineOffsetFeet ?? null,
+		snappedPoint: previewSurfacePoint,
+	});
 	const placedPosition = previewSurfacePoint.clone().addScaledVector(normalizedRoofNormal, STATIC_SURFACE_OFFSET_FEET);
 
 	ghostStaticMesh.position.copy(placedPosition);
@@ -351,6 +375,7 @@ function updateStaticPreview(hitPoint, placementLine, roofNormal, zoneMesh = nul
 	ghostPreviewGroup.visible = true;
 	currentPreviewMode = "static";
 
+	staticPreviewSurfacePoint = previewSurfacePoint.clone();
 	staticPreviewSnappedPoint = placedPosition.clone();
 	staticPreviewNormal = normalizedRoofNormal.clone();
 	staticPreviewPlacementLine = placementLine;
@@ -413,7 +438,7 @@ function updateVentPreview(pointerNdc, camera, placementMode) {
 				const matchedTarget = routing.intakeTargets.find((t) => t.zone === zoneHit.object);
 				if (matchedTarget?.line) {
 					hitPoint = zoneHit.point;
-					hitLine = matchedTarget.line;
+					hitLine = matchedTarget;
 				}
 			}
 		}
@@ -422,16 +447,17 @@ function updateVentPreview(pointerNdc, camera, placementMode) {
 			const lineHits = raycaster.intersectObjects(intakePlacementLines, false);
 			if (lineHits.length) {
 				hitPoint = lineHits[0].point;
-				hitLine = lineHits[0].object;
+				const lineObject = lineHits[0].object;
+				hitLine = routing.intakeTargets.find((target) => target.line === lineObject) || null;
 			}
 		}
 
-		if (!hitLine) {
+		if (!hitLine?.line) {
 			hideVentPreview();
 			return;
 		}
 
-		updateIntakePreview(hitPoint, hitLine);
+		updateIntakePreview(hitPoint, hitLine.line, hitLine);
 		return;
 	}
 
@@ -463,7 +489,7 @@ function updateVentPreview(pointerNdc, camera, placementMode) {
 		}
 
 		const outwardNormal = resolveOutwardRoofNormal(zone, zoneHit.point.clone(), faceWorldNormal);
-		updateStaticPreview(zoneHit.point, target.line, outwardNormal, zone);
+		updateStaticPreview(zoneHit.point, target.line, outwardNormal, zone, target);
 		return;
 	}
 
@@ -547,6 +573,11 @@ function resolveIntakeTargets(intakeReferences, roofType) {
 					side: mapIntakeKeyToStoredSide(key, roofType),
 					line: target.line,
 					zone: target.zone || null,
+					faceId: target.faceId || null,
+					edgeType: target.edgeType || null,
+					zoneType: target.zoneType || "intake",
+					zoneDepthFeet: Number.isFinite(target.zoneDepthFeet) ? target.zoneDepthFeet : null,
+					snapLineOffsetFeet: Number.isFinite(target.snapLineOffsetFeet) ? target.snapLineOffsetFeet : null,
 				};
 			});
 	}
@@ -582,7 +613,12 @@ function resolveStaticTargets(exhaustReferences, roofType) {
 					key,
 					side: mapStaticKeyToStoredSide(key, roofType),
 					line: target.line,
-					zone: target.zone
+					zone: target.zone,
+					faceId: target.faceId || null,
+					edgeType: target.edgeType || null,
+					zoneType: target.zoneType || "exhaust",
+					zoneDepthFeet: Number.isFinite(target.zoneDepthFeet) ? target.zoneDepthFeet : null,
+					snapLineOffsetFeet: Number.isFinite(target.snapLineOffsetFeet) ? target.snapLineOffsetFeet : null,
 				};
 			});
 	}
@@ -739,7 +775,7 @@ function tryPlaceIntakeVent() {
 		return false;
 	}
 
-	if (!intakePreviewSnappedPoint || !intakePreviewPlacementLine) {
+	if (!intakePreviewPlacementLine || (!intakePreviewSurfacePoint && !intakePreviewSnappedPoint)) {
 		return false;
 	}
 
@@ -750,7 +786,7 @@ function tryPlaceIntakeVent() {
 
 	return placeIntakeVentAt(
 		intakePreviewPlacementLine,
-		intakePreviewSnappedPoint,
+		intakePreviewSurfacePoint || intakePreviewSnappedPoint,
 		{ side: intakeTarget.side, referenceKey: intakeTarget.key }
 	);
 }
@@ -765,7 +801,7 @@ function tryPlaceStaticVent() {
 		return false;
 	}
 
-	if (!staticPreviewSnappedPoint || !staticPreviewNormal || !staticPreviewPlacementLine || !staticPreviewZoneMesh) {
+	if (!staticPreviewSurfacePoint || !staticPreviewNormal || !staticPreviewPlacementLine || !staticPreviewZoneMesh) {
 		return false;
 	}
 
@@ -781,8 +817,13 @@ function tryPlaceStaticVent() {
 	return placeStaticVentAt(
 		staticPreviewPlacementLine,
 		staticPreviewZoneMesh,
-		staticPreviewSnappedPoint,
-		{ side: staticTarget.side, referenceKey: staticTarget.key }
+		staticPreviewSurfacePoint,
+		{
+			side: staticTarget.side,
+			referenceKey: staticTarget.key,
+			roofNormal: staticPreviewNormal,
+			preserveSurfacePoint: true
+		}
 	);
 }
 
@@ -1197,6 +1238,66 @@ function resolveOutwardRoofNormal(zoneMesh, surfacePoint, candidateNormal = null
 	return roofNormal;
 }
 
+function toDebugVector(vector) {
+	if (!vector) {
+		return null;
+	}
+
+	return {
+		x: Number(vector.x.toFixed(4)),
+		y: Number(vector.y.toFixed(4)),
+		z: Number(vector.z.toFixed(4))
+	};
+}
+
+function logSnapInteractionDebug({ zoneType, faceId, edgeType, zoneDepthFeet, computedSnapLineOffsetFeet, snappedPoint }) {
+	if (!snappedPoint) {
+		return;
+	}
+
+	const signature = [
+		zoneType || "unknown-zone",
+		faceId || "unknown-face",
+		edgeType || "unknown-edge",
+		Number.isFinite(zoneDepthFeet) ? zoneDepthFeet.toFixed(2) : "na",
+		Number.isFinite(computedSnapLineOffsetFeet) ? computedSnapLineOffsetFeet.toFixed(2) : "na",
+		snappedPoint.x.toFixed(3),
+		snappedPoint.y.toFixed(3),
+		snappedPoint.z.toFixed(3),
+	].join("|");
+
+	if (signature === lastSnapDebugSignature) {
+		return;
+	}
+
+	lastSnapDebugSignature = signature;
+	console.debug("[RoofFlo Snap Interaction]", {
+		zoneType: zoneType || null,
+		faceId: faceId || null,
+		edgeType: edgeType || null,
+		zoneDepthFeet: Number.isFinite(zoneDepthFeet) ? Number(zoneDepthFeet.toFixed(3)) : null,
+		computedSnapLineOffsetFeet: Number.isFinite(computedSnapLineOffsetFeet)
+			? Number(computedSnapLineOffsetFeet.toFixed(3))
+			: null,
+		snappedPoint: toDebugVector(snappedPoint),
+	});
+}
+
+function logPlacementAttempt({ ventType, snappedCanonicalPoint, finalMeshPosition, localOffset }) {
+	if (!snappedCanonicalPoint || !finalMeshPosition) {
+		return;
+	}
+
+	const delta = finalMeshPosition.clone().sub(snappedCanonicalPoint);
+	console.debug("[RoofFlo Placement Attempt]", {
+		ventType,
+		snappedCanonicalPoint: toDebugVector(snappedCanonicalPoint),
+		finalMeshPosition: toDebugVector(finalMeshPosition),
+		delta: toDebugVector(delta),
+		localOffsetApplied: toDebugVector(localOffset)
+	});
+}
+
 function placeIntakeVentAt(line, zPosition, { side = null, referenceKey = null } = {}) {
 	const lineBounds = getLineZBounds(line);
 	if (!lineBounds) {
@@ -1236,10 +1337,18 @@ function placeIntakeVentAt(line, zPosition, { side = null, referenceKey = null }
 	if (lineDirection.lengthSq() > 0.000001) {
 		ventMesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), lineDirection);
 	}
+	const localOffset = new THREE.Vector3(0, 0.03, 0);
 	ventMesh.position.copy(intakePoint);
-	ventMesh.position.y += 0.03;
+	ventMesh.position.add(localOffset);
 	ventMesh.name = "intakeVent";
 	scene.add(ventMesh);
+
+	logPlacementAttempt({
+		ventType: "intake",
+		snappedCanonicalPoint: intakePoint,
+		finalMeshPosition: ventMesh.position,
+		localOffset
+	});
 
 	intakeVents.push({
 		type: "intake",
@@ -1255,7 +1364,12 @@ function placeIntakeVentAt(line, zPosition, { side = null, referenceKey = null }
 	return true;
 }
 
-function placeStaticVentAt(line, zoneMesh, zPosition, { side = null, referenceKey = null } = {}) {
+function placeStaticVentAt(
+	line,
+	zoneMesh,
+	zPosition,
+	{ side = null, referenceKey = null, roofNormal = null, preserveSurfacePoint = false } = {}
+) {
 	const lineBounds = getLineZBounds(line);
 	if (!lineBounds || !zoneMesh) {
 		return false;
@@ -1265,12 +1379,22 @@ function placeStaticVentAt(line, zoneMesh, zPosition, { side = null, referenceKe
 	const target = routing?.staticTargets.find((candidate) => candidate.line === line && candidate.zone === zoneMesh);
 	const resolvedSide = side || target?.side || "left";
 	const resolvedReferenceKey = referenceKey || target?.key || line.name || null;
-	const surfacePoint = getPointAtLineInput(lineBounds, zPosition);
+	const surfacePoint = (preserveSurfacePoint && zPosition?.isVector3)
+		? zPosition.clone()
+		: getPointAtLineInput(lineBounds, zPosition);
 	if (!surfacePoint) {
 		return false;
 	}
-	const roofNormal = resolveOutwardRoofNormal(zoneMesh, surfacePoint);
-	const placedPosition = surfacePoint.clone().addScaledVector(roofNormal, STATIC_SURFACE_OFFSET_FEET);
+
+	let resolvedRoofNormal = roofNormal?.clone?.() || resolveOutwardRoofNormal(zoneMesh, surfacePoint);
+	if (!Number.isFinite(resolvedRoofNormal.x) || !Number.isFinite(resolvedRoofNormal.y) || !Number.isFinite(resolvedRoofNormal.z) || resolvedRoofNormal.lengthSq() < 0.000001) {
+		resolvedRoofNormal = resolveOutwardRoofNormal(zoneMesh, surfacePoint);
+	} else {
+		resolvedRoofNormal.normalize();
+	}
+
+	const localOffset = resolvedRoofNormal.clone().multiplyScalar(STATIC_SURFACE_OFFSET_FEET);
+	const placedPosition = surfacePoint.clone().add(localOffset);
 
 	if (isDuplicateStaticVent(placedPosition)) {
 		return false;
@@ -1278,7 +1402,7 @@ function placeStaticVentAt(line, zoneMesh, zPosition, { side = null, referenceKe
 
 	const orientation = new THREE.Quaternion().setFromUnitVectors(
 		new THREE.Vector3(0, 1, 0),
-		roofNormal
+		resolvedRoofNormal
 	);
 
 	const ventMesh = new THREE.Mesh(
@@ -1297,12 +1421,19 @@ function placeStaticVentAt(line, zoneMesh, zPosition, { side = null, referenceKe
 	ventMesh.name = "staticVent";
 	scene.add(ventMesh);
 
+	logPlacementAttempt({
+		ventType: "static",
+		snappedCanonicalPoint: surfacePoint,
+		finalMeshPosition: ventMesh.position,
+		localOffset
+	});
+
 	staticVents.push({
 		type: "static",
 		side: resolvedSide,
 		referenceKey: resolvedReferenceKey,
 		position: ventMesh.position.clone(),
-		surfaceNormal: roofNormal.clone().normalize(),
+		surfaceNormal: resolvedRoofNormal.clone(),
 		orientation: ventMesh.quaternion.clone(),
 		openingSizeFeet: STATIC_SIZE_FEET,
 		mesh: ventMesh

@@ -155,6 +155,13 @@ function applyCanonicalPlacementReferences({ group, roofType, placementObjects }
                     key: target.key,
                     line: target.line,
                     zone: matchingZone?.zone || null,
+                    faceId: target.faceId || matchingZone?.faceId || null,
+                    edgeType: target.edgeType || matchingZone?.edgeType || null,
+                    zoneType: target.zoneType || matchingZone?.zoneType || "intake",
+                    zoneDepthFeet: Number.isFinite(target.zoneDepthFeet)
+                        ? target.zoneDepthFeet
+                        : (Number.isFinite(matchingZone?.zoneDepthFeet) ? matchingZone.zoneDepthFeet : null),
+                    snapLineOffsetFeet: Number.isFinite(target.snapLineOffsetFeet) ? target.snapLineOffsetFeet : null,
                 };
             }),
             perimeter: intakeLines,
@@ -168,6 +175,11 @@ function applyCanonicalPlacementReferences({ group, roofType, placementObjects }
                 key: target.key,
                 line: target.line,
                 zone: target.zone,
+                faceId: target.faceId || null,
+                edgeType: target.edgeType || target.edge?.classification || null,
+                zoneType: target.zoneType || "exhaust",
+                zoneDepthFeet: Number.isFinite(target.zoneDepthFeet) ? target.zoneDepthFeet : null,
+                snapLineOffsetFeet: Number.isFinite(target.snapLineOffsetFeet) ? target.snapLineOffsetFeet : null,
             })),
             zones: exhaustZoneMeshes,
             legacy: staticLines,

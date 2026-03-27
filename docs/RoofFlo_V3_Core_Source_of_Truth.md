@@ -2,7 +2,7 @@
 ROOFFLO V3 — CORE SOURCE OF TRUTH
 ========================================
 
-Last Updated: 2026-03-23  
+Last Updated: 2026-03-26  
 Scope: System architecture, principles, and development guardrails
 
 ----------------------------------------
@@ -56,12 +56,18 @@ SYSTEM LAYERS
 ### 1. Geometry Layer (FOUNDATION)
 
 Responsible for:
-- Constructing roof faces (planes)
+- Constructing all canonical roof enclosure faces
 - Defining vertices and edges
 
+Face Types:
+- Exterior roof faces (weather-facing)
+- Underside / soffit faces (overhang underside)
+- End-cap enclosure faces (gable/shed closures above building)
+
 Rules:
-- Faces define the roof, not zones or references
-- Geometry must fully represent the roof shape
+- Geometry must fully represent the roof enclosure above the building footprint
+- All faces must be constructed BEFORE edge derivation
+- Faces define the system — not zones, references, or airflow
 - No placeholder or fallback meshes allowed
 
 ---
@@ -73,29 +79,29 @@ Responsible for:
 
 Edge Types:
 
-- Eave edges (lowest perimeter edges)  
-- Ridge edges (highest shared horizontal edges)  
-- Hip edges (sloped shared edges between faces)  
-- Rake edges (sloped perimeter edges)  
+- Eave edges (boundary between exterior roof faces and soffit faces)  
+- Ridge edges (highest shared horizontal edges between roof faces)  
+- Hip edges (sloped shared edges between roof faces)  
+- Rake edges (sloped perimeter edges on gable ends)  
 - HighEdge (elevated perimeter edge with no opposing face — shed behavior)  
 - Valley edges (future support)
 
 Rules:
-- Edges must be derived from faces
-- No hardcoded edge assumptions
-- Classification must be geometry-driven (not roof-type-driven)
+- Edges must be derived from ALL face boundaries
+- Classification must be geometry + relationship driven
+- No hardcoded roof-type assumptions
 
 ---
 
 ### 3. Placement Reference Layer
 
 Responsible for:
-- Creating vent placement lines from classified edges
+- Creating vent placement references from classified edges
 
 Rules:
 
-- Intake references = derived from eave edges only  
-- Exhaust references = derived from ridge edges and valid exhaust-capable edges (e.g., highEdge)  
+- Intake references = derived from eave edges  
+- Exhaust references = derived from ridge edges and valid exhaust-capable edges  
 - References must lie directly on geometry  
 - References must follow exact edge direction  
 - No floating or offset references allowed  
@@ -109,9 +115,9 @@ Responsible for:
 
 Rules:
 - Zones are visual guides only  
-- Zones must be derived from references  
+- Zones must be derived from placement references  
 - Zones must not define placement logic  
-- Zones must align with actual geometry surfaces  
+- Zones must exist on the authoritative placement surface for that vent type  
 
 ---
 
@@ -121,7 +127,7 @@ Responsible for:
 - Filling volume beneath roof geometry
 
 Rules:
-- Attic is derived from roof faces  
+- Attic is derived from roof enclosure geometry  
 - Attic must never influence roof shape  
 - Attic must remain contained within building footprint  
 
@@ -137,7 +143,7 @@ Each roof type defines capabilities:
 - hasEaves  
 - hasHips  
 - hasValleys  
-- intakeStrategy (eave-based, perimeter-based)  
+- intakeStrategy (eave-based)  
 - exhaustStrategy (ridge-based, highEdge/apex-based)  
 
 Rules:
@@ -150,8 +156,15 @@ Rules:
 PLACEMENT RULES
 ----------------------------------------
 
-- Intake vents must snap to intake references (eave-derived)  
-- Exhaust vents must snap to exhaust references (ridge/highEdge-derived)  
+Authoritative Placement Surfaces:
+
+- Intake → underside/soffit faces derived from eave edges  
+- Exhaust → exterior roof faces  
+
+Rules:
+
+- Intake vents must snap to intake references and resolve onto soffit surfaces  
+- Exhaust vents must snap to exhaust references and resolve onto roof faces  
 - Placement must be deterministic and aligned  
 - No free-floating placement  
 
@@ -164,7 +177,8 @@ VISUAL RULES
 - All geometry must be continuous and connected  
 - No floating lines or elements  
 - Ridge must sit on actual roof geometry  
-- Intake lines must sit at the lowest edge of roof surfaces  
+- Intake placement must align with the soffit/underside surface  
+- Zones must visually match actual placement surfaces  
 
 ---
 
@@ -172,16 +186,14 @@ VISUAL RULES
 TERMINOLOGY (STRICT)
 ----------------------------------------
 
-- Roof Geometry = faces + edges (actual mesh)  
-- Faces = roof planes  
-- Edges = boundaries of faces  
+- Roof Geometry = faces + edges (canonical enclosure geometry)  
+- Faces = all planar enclosure surfaces (exterior, underside, end-cap)  
+- Edges = boundaries between faces  
 - References = placement lines derived from edges  
 - Zones = visual overlays only  
 
-Forbidden ambiguous terms:
-- shell  
-- skeleton  
-- envelope (unless explicitly defined as geometry)  
+Allowed:
+- "roof enclosure" (canonical geometry)
 
 ---
 
@@ -221,10 +233,10 @@ FAILURE CONDITIONS
 
 The system is considered broken if:
 
-- Roof renders as a flat slab  
-- Ridge appears detached or floating  
-- Intake references are not on lowest edges  
-- Geometry is not constructed from faces  
+- Roof renders incorrectly or incompletely  
+- Geometry is not fully enclosed above the building footprint  
+- Intake placement does not align with soffit surfaces  
+- Edges are misclassified or missing  
 - Any fallback geometry is used  
 
 ---
@@ -233,15 +245,11 @@ The system is considered broken if:
 CURRENT PRIORITY
 ----------------------------------------
 
-Canonical airflow alignment
+Geometry system upgrade to closed roof-shell model
 
-- Geometry integration for Gable, Shed, and Hip is complete  
-- Canonical pipeline is the active rendering system  
-- Airflow is still using legacy analytic containment  
-
-Next step:
-- Replace airflow containment with canonical face-derived roof height logic  
-- Maintain fallback behavior until canonical containment is fully validated  
+Next:
+- Align placement with authoritative surfaces  
+- Then: canonical airflow integration  
 
 ---
 
