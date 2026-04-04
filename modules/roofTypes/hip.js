@@ -65,6 +65,12 @@ export function createHipRoof({ width, length, pitch, overhang = 0 }) {
   /** @type {Vertex} */ const ridgeFront = { x: halfWidth, y: ridgeHeight, z: halfWidth     };
   /** @type {Vertex} */ const ridgeRear  = { x: halfWidth, y: ridgeHeight, z: length - halfWidth };
 
+  // Building-top footprint references under eave overhangs.
+  /** @type {Vertex} */ const frontLeftTop  = { x: 0,     y: 0, z: 0 };
+  /** @type {Vertex} */ const rearLeftTop   = { x: 0,     y: 0, z: length };
+  /** @type {Vertex} */ const frontRightTop = { x: width, y: 0, z: 0 };
+  /** @type {Vertex} */ const rearRightTop  = { x: width, y: 0, z: length };
+
   /** @type {RoofFace[]} */
   const faces = [
     {
@@ -88,6 +94,32 @@ export function createHipRoof({ width, length, pitch, overhang = 0 }) {
       vertices: [rearRight, rearLeft, ridgeRear],
     },
   ];
+
+  // Soffit / underside faces for each eave edge (left, right, front, rear).
+  if (oh > 0) {
+    faces.push(
+      {
+        id: 'face-soffit-left',
+        // Clockwise when viewed from above -> downward normal.
+        vertices: [frontLeft, frontLeftTop, rearLeftTop, rearLeft],
+      },
+      {
+        id: 'face-soffit-right',
+        // Clockwise when viewed from above -> downward normal.
+        vertices: [rearRight, rearRightTop, frontRightTop, frontRight],
+      },
+      {
+        id: 'face-soffit-front',
+        // Clockwise when viewed from above -> downward normal.
+        vertices: [frontLeft, frontRight, frontRightTop, frontLeftTop],
+      },
+      {
+        id: 'face-soffit-rear',
+        // Clockwise when viewed from above -> downward normal.
+        vertices: [rearRight, rearLeft, rearLeftTop, rearRightTop],
+      },
+    );
+  }
 
   /** @type {RoofDefinition} */
   return {

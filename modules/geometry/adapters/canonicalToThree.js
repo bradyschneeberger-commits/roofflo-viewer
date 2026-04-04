@@ -103,6 +103,54 @@ function computeFaceNormal(face) {
   return new THREE.Vector3().crossVectors(edgeA, edgeB).normalize();
 }
 
+function verticesMatch(a, b, epsilon = 0.0001) {
+  return (
+    Math.abs(a.x - b.x) <= epsilon &&
+    Math.abs(a.y - b.y) <= epsilon &&
+    Math.abs(a.z - b.z) <= epsilon
+  );
+}
+
+function resolveFaceBandFromEdge(edge, face) {
+  const faceVertices = Array.isArray(face?.vertices) ? face.vertices : [];
+  const vertexCount = faceVertices.length;
+  if (vertexCount < 4) {
+    return null;
+  }
+
+  for (let i = 0; i < vertexCount; i += 1) {
+    const current = faceVertices[i];
+    const next = faceVertices[(i + 1) % vertexCount];
+    const matchesForward = verticesMatch(current, edge.start) && verticesMatch(next, edge.end);
+    const matchesReverse = verticesMatch(current, edge.end) && verticesMatch(next, edge.start);
+
+    if (!matchesForward && !matchesReverse) {
+      continue;
+    }
+
+    const innerStart = toVector3(edge.start);
+    const innerEnd = toVector3(edge.end);
+    const oppositeA = toVector3(faceVertices[(i + 2) % vertexCount]);
+    const oppositeB = toVector3(faceVertices[(i + 3) % vertexCount]);
+    const outerStart = matchesForward ? oppositeB : oppositeA;
+    const outerEnd = matchesForward ? oppositeA : oppositeB;
+    const depthFeet = (
+      innerStart.distanceTo(outerStart) +
+      innerEnd.distanceTo(outerEnd)
+    ) * 0.5;
+
+    return {
+      innerStart,
+      innerEnd,
+      outerStart,
+      outerEnd,
+      depthFeet,
+    };
+  }
+
+  return null;
+}
+
 function buildInsetEdgePoints(edge, face, depthFeet) {
   const outerStart = toVector3(edge.start);
   const outerEnd = toVector3(edge.end);
@@ -128,13 +176,7 @@ function buildInsetEdgePoints(edge, face, depthFeet) {
   };
 }
 
-function createZoneMeshFromEdge(edge, face, name, depthFeet, color) {
-  const outerStart = toVector3(edge.start);
-  const outerEnd = toVector3(edge.end);
-  const innerEdge = buildInsetEdgePoints(edge, face, depthFeet);
-  const faceNormal = computeFaceNormal(face);
-  const zonePoints = [outerStart, outerEnd, innerEdge.end, innerEdge.start];
-
+function createZoneMeshFromPoints(zonePoints, faceNormal, name, color) {
   const testNormal = new THREE.Vector3()
     .crossVectors(
       zonePoints[1].clone().sub(zonePoints[0]),
@@ -171,8 +213,28 @@ function createZoneMeshFromEdge(edge, face, name, depthFeet, color) {
   return mesh;
 }
 
+function createZoneMeshFromEdge(edge, face, name, depthFeet, color) {
+  const outerStart = toVector3(edge.start);
+  const outerEnd = toVector3(edge.end);
+  const innerEdge = buildInsetEdgePoints(edge, face, depthFeet);
+  const faceNormal = computeFaceNormal(face);
+  return createZoneMeshFromPoints(
+    [outerStart, outerEnd, innerEdge.end, innerEdge.start],
+    faceNormal,
+    name,
+    color
+  );
+}
+
 function buildCenteredZoneSnapLineEdge(edge, face, zoneDepthFeet) {
   return buildInsetEdgePoints(edge, face, zoneDepthFeet * 0.5);
+}
+
+function buildCenteredBandSnapLine(band, ratio = 0.5) {
+  return {
+    start: band.innerStart.clone().lerp(band.outerStart, ratio),
+    end: band.innerEnd.clone().lerp(band.outerEnd, ratio),
+  };
 }
 
 function resolveIntakeKey(edge, roofType, midpoint, bounds) {
@@ -215,15 +277,24 @@ function resolveExhaustFaceIds(edge, roofType) {
     return [];
   }
 
+  const exteriorFaceIds = faceIds.filter((faceId) => {
+    const normalized = String(faceId || '').toLowerCase();
+    return !normalized.includes('soffit') && !normalized.includes('endcap');
+  });
+
+  if (!exteriorFaceIds.length) {
+    return [];
+  }
+
   if (edge.classification === 'ridge') {
-    return faceIds;
+    return exteriorFaceIds;
   }
 
   if (roofType === 'hip') {
-    return faceIds;
+    return exteriorFaceIds;
   }
 
-  return faceIds.slice(0, 1);
+  return exteriorFaceIds.slice(0, 1);
 }
 
 export function createThreePlacementObjects({ roofDefinition, references }) {
@@ -240,46 +311,54 @@ export function createThreePlacementObjects({ roofDefinition, references }) {
 
   const intakeZoneSources = (references?.intake || []).flatMap((edge, index) => {
     const faceIds = Array.isArray(edge.faceIds) ? edge.faceIds : [];
-    if (!faceIds.length) {
+    const soffitFaceId = faceIds.find((candidateId) => String(candidateId || '').toLowerCase().includes('soffit'));
+    if (!soffitFaceId) {
       return [];
     }
 
-    const faceId = faceIds[0];
-    const face = faceMap.get(faceId);
-    if (!face) {
+    const face = faceMap.get(soffitFaceId);
+    const band = face ? resolveFaceBandFromEdge(edge, face) : null;
+    if (!face || !band || band.depthFeet <= 0.000001) {
       return [];
     }
 
     const midpoint = {
-      x: (edge.start.x + edge.end.x) * 0.5,
-      z: (edge.start.z + edge.end.z) * 0.5,
+      x: (band.innerStart.x + band.innerEnd.x + band.outerStart.x + band.outerEnd.x) * 0.25,
+      z: (band.innerStart.z + band.innerEnd.z + band.outerStart.z + band.outerEnd.z) * 0.25,
     };
     const key = resolveIntakeKey(edge, roofType, midpoint, bounds);
-    const zone = createZoneMeshFromEdge(
-      edge,
-      face,
+    const zoneDepthFeet = band.depthFeet;
+    const zone = createZoneMeshFromPoints(
+      [band.outerStart, band.outerEnd, band.innerEnd, band.innerStart],
+      computeFaceNormal(face),
       `${key}IntakeZone-${index}`,
-      INTAKE_ZONE_DEPTH_FEET,
       INTAKE_ZONE_COLOR
     );
+    zone.userData = {
+      zoneType: 'intake',
+      authoritativeSurfaceType: 'soffit',
+      faceId: soffitFaceId,
+      edgeType: edge.classification ?? null,
+      zoneDepthFeet,
+      snapLineOffsetFeet: zoneDepthFeet * 0.5,
+    };
 
-    return [{ key, zone, edge, faceId, index }];
+    return [{
+      key,
+      zone,
+      edge,
+      faceId: soffitFaceId,
+      face,
+      band,
+      index,
+      zoneDepthFeet,
+      authoritativeSurfaceType: 'soffit',
+    }];
   });
 
   const intakeTargets = intakeZoneSources
-    .filter(({ edge }) => {
-      const dx = edge.end.x - edge.start.x;
-      const dy = edge.end.y - edge.start.y;
-      const dz = edge.end.z - edge.start.z;
-      return (dx * dx + dy * dy + dz * dz) > 0.000001;
-    })
-    .map(({ key, edge, faceId, index }) => {
-      const face = faceMap.get(faceId);
-      if (!face) {
-        return null;
-      }
-
-      const placementEdge = buildCenteredZoneSnapLineEdge(edge, face, INTAKE_ZONE_DEPTH_FEET);
+    .map(({ key, edge, faceId, index, band, zoneDepthFeet, authoritativeSurfaceType }) => {
+      const placementEdge = buildCenteredBandSnapLine(band, 0.5);
       const line = createReferenceLine(
         placementEdge.start,
         placementEdge.end,
@@ -294,8 +373,9 @@ export function createThreePlacementObjects({ roofDefinition, references }) {
         index,
         zoneType: 'intake',
         edgeType: edge.classification,
-        zoneDepthFeet: INTAKE_ZONE_DEPTH_FEET,
-        snapLineOffsetFeet: INTAKE_ZONE_DEPTH_FEET * 0.5,
+        zoneDepthFeet,
+        snapLineOffsetFeet: zoneDepthFeet * 0.5,
+        authoritativeSurfaceType,
       };
     })
     .filter(Boolean);
@@ -307,7 +387,8 @@ export function createThreePlacementObjects({ roofDefinition, references }) {
     faceId: zoneSource.faceId,
     zoneType: 'intake',
     edgeType: zoneSource.edge?.classification || null,
-    zoneDepthFeet: INTAKE_ZONE_DEPTH_FEET,
+    zoneDepthFeet: zoneSource.zoneDepthFeet,
+    authoritativeSurfaceType: zoneSource.authoritativeSurfaceType,
   }));
 
   const ridgeEdge = (references?.ridge || [])[0] || null;

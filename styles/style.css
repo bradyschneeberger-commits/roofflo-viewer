@@ -25,7 +25,7 @@ body {
   overflow: hidden;
   font-family: "Segoe UI", "SF Pro Text", -apple-system, BlinkMacSystemFont, sans-serif;
   color: var(--text-main);
-  background: #0f172a;
+  background: #2a180f;
 }
 
 #workspace {

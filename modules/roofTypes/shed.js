@@ -56,6 +56,12 @@ export function createShedRoof({ width, length, pitch, overhang = 0 }) {
   /** @type {Vertex} */ const frontHigh = { x: width + oh, y: riseHeight, z: -oh         };
   /** @type {Vertex} */ const rearHigh  = { x: width + oh, y: riseHeight, z: length + oh };
 
+  // Building-top footprint references under the enclosure.
+  /** @type {Vertex} */ const frontLowTop  = { x: 0,     y: 0,          z: 0 };
+  /** @type {Vertex} */ const rearLowTop   = { x: 0,     y: 0,          z: length };
+  /** @type {Vertex} */ const frontHighTop = { x: width, y: riseHeight, z: 0 };
+  /** @type {Vertex} */ const rearHighTop  = { x: width, y: riseHeight, z: length };
+
   /** @type {RoofFace[]} */
   const faces = [
     {
@@ -64,6 +70,48 @@ export function createShedRoof({ width, length, pitch, overhang = 0 }) {
       vertices: [frontLow, rearLow, rearHigh, frontHigh],
     },
   ];
+
+  // Soffit / underside closure at the low-side eave.
+  if (oh > 0) {
+    faces.push({
+      id: 'face-soffit-low',
+      // Clockwise when viewed from above -> downward normal.
+      vertices: [frontLow, frontLowTop, rearLowTop, rearLow],
+    });
+  }
+
+  // End-cap enclosure faces at front/rear (building-top to high-edge boundary).
+  // Keep these planar: the shed roof remains one continuous quad, while the
+  // front/rear closures are split into triangles so no bent quad is introduced.
+  if (oh > 0) {
+    faces.push(
+      {
+        id: 'face-endcap-front-lower',
+        // Outward normal toward -Z.
+        vertices: [frontLow, frontHigh, frontLowTop],
+      },
+      {
+        id: 'face-endcap-front-upper',
+        // Outward normal toward -Z.
+        vertices: [frontLowTop, frontHigh, frontHighTop],
+      },
+      {
+        id: 'face-endcap-rear-lower',
+        // Outward normal toward +Z.
+        vertices: [rearLow, rearLowTop, rearHigh],
+      },
+      {
+        id: 'face-endcap-rear-upper',
+        // Outward normal toward +Z.
+        vertices: [rearLowTop, rearHighTop, rearHigh],
+      },
+      {
+        id: 'face-endcap-high',
+        // High-side closure from building top line to roof high-edge boundary.
+        vertices: [frontHigh, frontHighTop, rearHighTop, rearHigh],
+      },
+    );
+  }
 
   /** @type {RoofDefinition} */
   return {

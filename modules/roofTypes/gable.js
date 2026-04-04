@@ -59,6 +59,15 @@ export function createGableRoof({ width, length, pitch, overhang = 0 }) {
   /** @type {Vertex} */ const frontRidge = { x: halfWidth, y: ridgeHeight, z: -oh     };
   /** @type {Vertex} */ const rearRidge  = { x: halfWidth, y: ridgeHeight, z: length + oh };
 
+  // Building-top footprint references (wall top boundary under roof enclosure)
+  /** @type {Vertex} */ const frontLeftTop  = { x: 0,     y: 0, z: 0 };
+  /** @type {Vertex} */ const rearLeftTop   = { x: 0,     y: 0, z: length };
+  /** @type {Vertex} */ const frontRightTop = { x: width, y: 0, z: 0 };
+  /** @type {Vertex} */ const rearRightTop  = { x: width, y: 0, z: length };
+
+  /** @type {Vertex} */ const frontRidgeTop = { x: halfWidth, y: ridgeHeight, z: 0 };
+  /** @type {Vertex} */ const rearRidgeTop  = { x: halfWidth, y: ridgeHeight, z: length };
+
   /** @type {RoofFace[]} */
   const faces = [
     {
@@ -72,6 +81,37 @@ export function createGableRoof({ width, length, pitch, overhang = 0 }) {
       vertices: [frontRightEave, frontRidge, rearRidge, rearRightEave],
     },
   ];
+
+  // Soffit / underside faces derived from eave edges.
+  // These are horizontal closure strips between roof eaves and building footprint.
+  if (oh > 0) {
+    faces.push(
+      {
+        id: 'face-soffit-left',
+        // Clockwise when viewed from above -> downward normal.
+        vertices: [frontLeftEave, frontLeftTop, rearLeftTop, rearLeftEave],
+      },
+      {
+        id: 'face-soffit-right',
+        // Clockwise when viewed from above -> downward normal.
+        vertices: [rearRightEave, rearRightTop, frontRightTop, frontRightEave],
+      },
+    );
+  }
+
+  // End-cap enclosure faces at front/rear gable ends (building-top to ridge).
+  faces.push(
+    {
+      id: 'face-endcap-front',
+      // Outward normal toward -Z.
+      vertices: [frontLeftTop, frontRidgeTop, frontRightTop],
+    },
+    {
+      id: 'face-endcap-rear',
+      // Outward normal toward +Z.
+      vertices: [rearLeftTop, rearRightTop, rearRidgeTop],
+    },
+  );
 
   /** @type {RoofDefinition} */
   return {
